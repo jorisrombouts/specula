@@ -8,3 +8,28 @@ test("the app renders on warm paper", async ({ page }) => {
   // --paper #FBFAF6 == rgb(251, 250, 246)
   expect(bg).toBe("rgb(251, 250, 246)");
 });
+
+const ROUTES = [
+  { href: "/jobs", label: "jobs" },
+  { href: "/approvals", label: "approvals" },
+  { href: "/companies", label: "companies" },
+  { href: "/insights", label: "insights" },
+  { href: "/profiles", label: "profiles" },
+  { href: "/targeting", label: "targeting" },
+  { href: "/candidate", label: "candidate" },
+];
+
+test("/ redirects to /jobs", async ({ page }) => {
+  await page.goto("/");
+  await expect(page).toHaveURL(/\/jobs$/);
+  await expect(page.locator('[data-screen-label="jobs"]')).toBeVisible();
+});
+
+for (const route of ROUTES) {
+  test(`renders the ${route.label} view at ${route.href}`, async ({ page }) => {
+    await page.goto(route.href);
+    await expect(
+      page.locator(`[data-screen-label="${route.label}"]`),
+    ).toBeVisible();
+  });
+}
