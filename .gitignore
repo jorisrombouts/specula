@@ -13,6 +13,11 @@ out/
 *.tsbuildinfo
 next-env.d.ts
 
+# Playwright
+test-results/
+playwright-report/
+.last-run.json
+
 # Env & secrets
 .env
 .env.*
