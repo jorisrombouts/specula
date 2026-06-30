@@ -1,26 +1,68 @@
 @import "tailwindcss";
 
+/* Runtime-swappable variables (the M1 Tweaks panel mutates these). */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --accent: #2e7d4f;
+  --accent-bg: #e7f0e9;
+  --accent-ink: #1e5d39;
+  /* density (driven by [data-density] on <html>; default = comfortable) */
+  --row-py: 17px;
+  --gutter: 34px;
+  --card-pad: 20px;
+}
+[data-density="compact"] {
+  --row-py: 11px;
+  --gutter: 26px;
+  --card-pad: 15px;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+@theme {
+  --color-paper: #fbfaf6;
+  --color-panel: #f4f2eb;
+  --color-panel-2: #eeebe1;
+  --color-card: #ffffff;
+  --color-ink: #211e18;
+  --color-ink-2: #7c7567;
+  --color-ink-3: #aba493;
+  --color-rule: #e4e0d5;
+  --color-rule-2: #d6d1c2;
+  --color-accent: var(--accent);
+  --color-accent-bg: var(--accent-bg);
+  --color-accent-ink: var(--accent-ink);
+  --color-warn: #b3541e;
+  --color-warn-bg: #f7ebe0;
+  --color-gold: #9a7a18;
+
+  --font-display: var(--font-spectral), serif;
+  --font-body: var(--font-hanken), sans-serif;
+  --font-mono: var(--font-geist-mono), monospace;
+
+  --shadow-card: 0 1px 2px rgba(33, 30, 24, 0.04);
+  --shadow-pop:
+    0 16px 50px -12px rgba(33, 30, 24, 0.28), 0 2px 8px rgba(33, 30, 24, 0.08);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@layer base {
+  html {
+    font-size: 14px;
+  }
+  body {
+    font-family: var(--font-body);
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  ::selection {
+    background: var(--accent-bg);
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* Main scroll column — webkit scrollbar (matches prototype .main) */
+.main-scroll::-webkit-scrollbar {
+  width: 10px;
+}
+.main-scroll::-webkit-scrollbar-thumb {
+  background: var(--color-rule-2);
+  border-radius: 10px;
+  border: 3px solid var(--color-paper);
 }
