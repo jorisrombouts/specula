@@ -12,6 +12,9 @@ instrument UI. Built in phases (M0–M6) from a Claude Design prototype.
 ## Deliberate deviations from the spec (DO NOT re-add by following the spec verbatim)
 - NO billing / Stripe / paid plan tiers / entitlement gating. Specula is free to use.
 - NO object storage. Keep `content_hash` + `source_url`; logos via favicon URL.
+- Next.js **16** (not the spec's "15"). Override approved 2026-06-30 (Phase 0): `create-next-app@latest`
+  ships 16; it builds/lints/type-checks clean. Future phases target 16. Note: Next 16 uses Turbopack
+  for production builds by default.
 
 ## How we build
 - One phase at a time via superpowers: brainstorm → writing-plans → executing-plans; TDD for logic;
@@ -19,7 +22,7 @@ instrument UI. Built in phases (M0–M6) from a Claude Design prototype.
 - Default to YAGNI/KISS: no service, file, folder, or abstraction until the milestone that needs it.
 
 ## Stack & hosting (free-tier first)
-- Monorepo: `apps/api` (FastAPI · uv · ruff · mypy --strict · pytest) + `apps/web` (Next 15 · TS strict
+- Monorepo: `apps/api` (FastAPI · uv · ruff · mypy --strict · pytest) + `apps/web` (Next 16 · TS strict
   · Tailwind · ESLint + Prettier). pnpm workspace + `packages/shared-types` arrive in M1.
 - Vercel (web) + Neon (Postgres+pgvector) + Upstash (Redis, M3). OpenAI is the only paid piece. Avoid paid infra.
 
