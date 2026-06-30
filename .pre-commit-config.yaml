@@ -1,0 +1,42 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.20
+    hooks:
+      - id: ruff
+        args: [--fix]
+        files: ^apps/api/
+      - id: ruff-format
+        files: ^apps/api/
+
+  - repo: https://github.com/astral-sh/uv-pre-commit
+    rev: 0.11.25
+    hooks:
+      - id: uv-lock
+        args: [--project, apps/api]
+        files: ^apps/api/(pyproject\.toml|uv\.lock)$
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+      - id: detect-private-key
+
+  - repo: local
+    hooks:
+      - id: mypy
+        name: mypy (apps/api)
+        entry: bash -c 'cd apps/api && uv run mypy .'
+        language: system
+        pass_filenames: false
+        files: ^apps/api/
+
+      - id: web-lint
+        name: eslint + prettier (apps/web)
+        entry: bash -c 'cd apps/web && pnpm lint && pnpm exec prettier --check .'
+        language: system
+        pass_filenames: false
+        files: ^apps/web/
