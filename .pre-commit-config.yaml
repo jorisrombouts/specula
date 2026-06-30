@@ -1,13 +1,4 @@
 repos:
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.20
-    hooks:
-      - id: ruff
-        args: [--fix]
-        files: ^apps/api/
-      - id: ruff-format
-        files: ^apps/api/
-
   - repo: https://github.com/astral-sh/uv-pre-commit
     rev: 0.11.25
     hooks:
@@ -27,6 +18,18 @@ repos:
 
   - repo: local
     hooks:
+      - id: ruff
+        name: ruff (apps/api)
+        entry: bash -c 'cd apps/api && uv run ruff check --fix'
+        language: system
+        pass_filenames: false
+        files: ^apps/api/
+      - id: ruff-format
+        name: ruff-format (apps/api)
+        entry: bash -c 'cd apps/api && uv run ruff format'
+        language: system
+        pass_filenames: false
+        files: ^apps/api/
       - id: mypy
         name: mypy (apps/api)
         entry: bash -c 'cd apps/api && uv run mypy .'
@@ -36,7 +39,7 @@ repos:
 
       - id: web-lint
         name: eslint + prettier (apps/web)
-        entry: bash -c 'cd apps/web && pnpm lint && pnpm exec prettier --check .'
+        entry: bash -c 'cd apps/web && pnpm lint && pnpm format:check'
         language: system
         pass_filenames: false
         files: ^apps/web/

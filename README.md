@@ -23,9 +23,9 @@ just dev-web   # Next.js on http://localhost:3000
 
 ```
 apps/api/    FastAPI service (uv · ruff · mypy --strict · pytest)
-apps/web/    Next.js 15 app (TS strict · Tailwind · ESLint + Prettier)
+apps/web/    Next.js 16 app (TS strict · Tailwind · ESLint + Prettier)
 docs/        Design specs (source of truth)
-prototype/   Pixel-faithful UI prototype (visual source of truth)
+prototype/   Pixel-faithful UI prototype — serve over HTTP to view (cd prototype && python3 -m http.server), not file://
 docker-compose.yml   Local Postgres + pgvector
 justfile     One entrypoint into both apps
 ```
