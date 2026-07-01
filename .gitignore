@@ -28,3 +28,4 @@ playwright-report/
 
 # Tooling
 .pre-commit-cache/
+.vscode/
