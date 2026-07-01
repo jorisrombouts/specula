@@ -11,8 +11,11 @@ dev-api:
     cd apps/api && uv run uvicorn specula_api.main:app --reload --port 8000
 
 # Run the web app on :3000
+# NODE_EXTRA_CA_CERTS lets Node trust a corporate-proxy CA for outbound TLS
+# (Auth.js fetches Google's OIDC config at sign-in). Uses your env value if set,
+# else ~/.corp-ca.pem (build it: security find-certificate -a -p <keychain> > ~/.corp-ca.pem).
 dev-web:
-    cd apps/web && pnpm dev
+    cd apps/web && NODE_EXTRA_CA_CERTS="${NODE_EXTRA_CA_CERTS:-$HOME/.corp-ca.pem}" pnpm dev
 
 # Lint both apps
 lint:
