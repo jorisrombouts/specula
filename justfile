@@ -29,9 +29,14 @@ typecheck:
     cd apps/api && uv run mypy .
     cd apps/web && pnpm typecheck
 
-# Test both apps
+# Test both apps (api: pytest, web: vitest)
 test:
     cd apps/api && uv run pytest
+    cd apps/web && pnpm test
+
+# Browser E2E for the web app (Playwright)
+e2e:
+    cd apps/web && pnpm test:e2e
 
 # Start local infra (Postgres + pgvector)
 up:
