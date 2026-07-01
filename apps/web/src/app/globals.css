@@ -66,3 +66,27 @@
   border-radius: 10px;
   border: 3px solid var(--color-paper);
 }
+
+/* Sidebar sync-dot pulse — the one allowed infinite animation (spec §6.3) */
+.sync-dot::after {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  border: 1px solid var(--accent);
+  opacity: 0.4;
+  animation: syncPulse 2.4s infinite;
+}
+@keyframes syncPulse {
+  0% {
+    transform: scale(0.6);
+    opacity: 0.5;
+  }
+  70% {
+    transform: scale(1.6);
+    opacity: 0;
+  }
+  100% {
+    opacity: 0;
+  }
+}

@@ -22,7 +22,7 @@ export function Sidebar() {
         </div>
         <div className="mt-[14px] flex flex-col gap-[9px]">
           <div className="font-mono flex items-center gap-2 text-[11px] text-ink-2">
-            <span className="relative h-[7px] w-[7px] flex-shrink-0 rounded-full bg-accent" />
+            <span className="sync-dot relative h-[7px] w-[7px] flex-shrink-0 rounded-full bg-accent" />
             synced <b className="font-semibold text-ink">—</b> ·{" "}
             <b className="font-semibold text-ink">—</b> new
           </div>
