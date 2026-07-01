@@ -5,7 +5,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     app_env: str = "development"
-    database_url: str = "postgresql://specula:specula@localhost:5432/specula"
+    database_url: str = "postgresql+asyncpg://specula:specula@localhost:5432/specula"
 
 
 settings = Settings()
