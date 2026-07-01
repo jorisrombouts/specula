@@ -25,6 +25,9 @@ instrument UI. Built in phases (M0–M6) from a Claude Design prototype.
 - Monorepo: `apps/api` (FastAPI · uv · ruff · mypy --strict · pytest) + `apps/web` (Next 16 · TS strict
   · Tailwind · ESLint + Prettier). pnpm workspace + `packages/shared-types` arrive in M1.
 - Vercel (web) + Neon (Postgres+pgvector) + Upstash (Redis, M3). OpenAI is the only paid piece. Avoid paid infra.
+- Auth: Auth.js v5 (NextAuth), **Google-only** sign-in, **JWT (stateless) session** — no DB adapter;
+  FastAPI owns the DB. Dev DB = local docker Postgres (`just up`); Neon is a deploy-time DATABASE_URL swap.
+  DB access is async SQLAlchemy 2.0 + Alembic (first migration = `users`, identity only).
 
 ## Product invariants (central, easy to break)
 - Counts are DERIVED server-side, never stored/hard-coded.
