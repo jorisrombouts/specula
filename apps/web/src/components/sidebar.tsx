@@ -2,10 +2,13 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { signOut } from "next-auth/react";
 import { NAV, isActive, type NavItem } from "@/lib/nav";
 import { Icon } from "@/components/icon";
 
-export function Sidebar() {
+type SidebarUser = { name?: string | null; email?: string | null };
+
+export function Sidebar({ user }: { user: SidebarUser }) {
   const pathname = usePathname();
 
   return (
@@ -57,8 +60,8 @@ export function Sidebar() {
         )}
       </nav>
 
-      {/* Candidate card — neutral placeholder until M0b/M2 */}
-      <div className="border-t border-rule p-3">
+      {/* Signed-in identity + sign-out */}
+      <div className="flex flex-col gap-2 border-t border-rule p-3">
         <Link
           href="/candidate"
           aria-current={isActive("/candidate", pathname) ? "page" : undefined}
@@ -68,18 +71,27 @@ export function Sidebar() {
               : "border-transparent hover:border-rule hover:bg-panel-2"
           }`}
         >
-          <span className="font-mono flex h-[34px] w-[34px] flex-shrink-0 items-center justify-center rounded-[9px] bg-ink text-[13px] font-semibold text-paper">
+          <span className="font-mono flex h-[34px] w-[34px] flex-shrink-0 items-center justify-center rounded-[9px] bg-ink text-paper">
             <span className="h-[15px] w-[15px]">
               <Icon name="candidate" />
             </span>
           </span>
-          <span>
-            <span className="block text-[13px] font-semibold text-ink">
-              Candidate
+          <span className="min-w-0">
+            <span className="block truncate text-[13px] font-semibold text-ink">
+              {user.name ?? "Account"}
             </span>
-            <span className="block text-[11.5px] text-ink-2">profile</span>
+            <span className="block truncate text-[11.5px] text-ink-2">
+              {user.email ?? ""}
+            </span>
           </span>
         </Link>
+        <button
+          type="button"
+          onClick={() => signOut({ redirectTo: "/signin" })}
+          className="font-mono w-full rounded-[7px] px-[10px] py-[6px] text-left text-[10.5px] uppercase tracking-[0.1em] text-ink-3 hover:bg-panel-2 hover:text-ink"
+        >
+          Sign out
+        </button>
       </div>
     </aside>
   );
