@@ -3,7 +3,7 @@ set shell := ["bash", "-uc"]
 # Install all deps and git hooks
 setup:
     cd apps/api && uv sync
-    cd apps/web && pnpm install
+    pnpm install
     pre-commit install
 
 # Run the API with reload on :8000
