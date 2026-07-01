@@ -38,6 +38,7 @@ select = ["E", "F", "I", "UP", "B", "SIM", "C4", "PT", "RUF"]
 [tool.mypy]
 strict = true
 python_version = "3.12"
+exclude = ["^alembic/"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
