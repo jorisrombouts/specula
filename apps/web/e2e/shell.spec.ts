@@ -33,3 +33,23 @@ for (const route of ROUTES) {
     ).toBeVisible();
   });
 }
+
+test("the sidebar shows the brand and grouped sections", async ({ page }) => {
+  await page.goto("/jobs");
+  await expect(page.getByText("Specula")).toBeVisible();
+  for (const section of ["Pipeline", "Intelligence", "Configure"]) {
+    await expect(page.getByText(section, { exact: true })).toBeVisible();
+  }
+});
+
+test("the active nav item reflects the current route", async ({ page }) => {
+  await page.goto("/companies");
+  await expect(page.getByRole("link", { name: /Companies/i })).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
+  await expect(page.getByRole("link", { name: /^Jobs$/i })).not.toHaveAttribute(
+    "aria-current",
+    "page",
+  );
+});
