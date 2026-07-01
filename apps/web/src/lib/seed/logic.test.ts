@@ -1,7 +1,9 @@
 import { describe, it, expect } from "vitest";
+import type { Job } from "@specula/shared-types";
 import { jobs, lenses } from "@/lib/seed/data";
 import {
   filterByLens,
+  locForLens,
   scoreForLens,
   deriveLensSummaries,
   sortJobs,
@@ -31,6 +33,33 @@ describe("filterByLens", () => {
         .map((j) => j.id)
         .sort(),
     ).toEqual(["j3", "j4", "j5", "j7", "j8"]);
+  });
+  it("mode pre-filter excludes jobs whose mode is not in the lens modes", () => {
+    // berlin lens modes = ["Hybrid", "On-site"]; a Remote job in Berlin is excluded.
+    const remoteBerlin = {
+      id: "syn1",
+      city: "Berlin",
+      country: "DE",
+      hq: "DE",
+      mode: "Remote",
+    } as Job;
+    const hybridBerlin = {
+      id: "syn2",
+      city: "Berlin",
+      country: "DE",
+      hq: "DE",
+      mode: "Hybrid",
+    } as Job;
+    expect(
+      filterByLens([remoteBerlin, hybridBerlin], "berlin").map((j) => j.id),
+    ).toEqual(["syn2"]);
+  });
+});
+
+describe("locForLens", () => {
+  it("recomputes loc for the remote lens (j1: Hybrid+FR → 58+6)", () => {
+    const j1 = jobs.find((j) => j.id === "j1")!;
+    expect(locForLens(j1, "remote")).toBe(64);
   });
 });
 
@@ -63,6 +92,24 @@ describe("deriveLensSummaries", () => {
 describe("sortJobs", () => {
   it("match sorts descending by match", () => {
     const sorted = sortJobs(jobs, "match");
-    expect(sorted[0].match).toBeGreaterThanOrEqual(sorted[1].match);
+    expect(
+      sorted.every((j, i) => i === 0 || sorted[i - 1].match >= j.match),
+    ).toBe(true);
+  });
+  it("deadline sorts ascending by deadlineDays", () => {
+    const sorted = sortJobs(jobs, "deadline");
+    expect(
+      sorted.every(
+        (j, i) => i === 0 || sorted[i - 1].deadlineDays <= j.deadlineDays,
+      ),
+    ).toBe(true);
+  });
+  it("new sorts isNew jobs first", () => {
+    const sorted = sortJobs(jobs, "new");
+    expect(
+      sorted.every(
+        (j, i) => i === 0 || Number(sorted[i - 1].isNew) >= Number(j.isNew),
+      ),
+    ).toBe(true);
   });
 });

@@ -5,12 +5,15 @@ import type {
   JobSort,
   Factors,
 } from "@specula/shared-types";
+import { lenses } from "@/lib/seed/data";
 
 const clamp = (n: number) => Math.max(0, Math.min(100, Math.round(n)));
 
 export function filterByLens(jobs: Job[], lensId: string): Job[] {
-  if (lensId === "all") return jobs.slice();
+  const lens = lenses.find((l) => l.id === lensId);
+  if (!lens || lensId === "all") return jobs.slice();
   return jobs.filter((j) => {
+    if (lens.modes && !lens.modes.includes(j.mode)) return false;
     if (lensId === "remote") return j.mode === "Remote";
     if (lensId === "foreign") return j.hq !== j.country;
     if (lensId === "spain") return j.country === "ES";
