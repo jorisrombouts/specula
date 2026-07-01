@@ -41,8 +41,8 @@ apps/api/
   alembic/env.py                         # CREATE+MODIFY (T2) async env → settings + metadata
   alembic/script.py.mako                 # CREATE (T2) generated
   alembic/versions/<hash>_create_users.py# CREATE (T2) first migration
-  tests/conftest.py                      # CREATE (T2) DB reachability skip + migrated_db fixture
-  tests/test_db.py                       # CREATE (T2) migration + round-trip + uniqueness
+  tests/conftest.py                      # CREATE (T2) migrated_db fixture (schema upgrade)
+  tests/test_db.py                       # CREATE (T2) skip-marker + migration + round-trip + uniqueness
 
 apps/web/
   src/auth.ts                            # CREATE (T3) NextAuth config
@@ -302,16 +302,34 @@ Expected: upgrade runs without error and creates `users`; downgrade drops it; re
 
 - [ ] **Step 6: Write the DB reachability gate + fixture (`conftest.py`)**
 
-`apps/api/tests/conftest.py`:
+`apps/api/tests/conftest.py` (only the `migrated_db` fixture — pytest auto-injects fixtures by name, so no cross-file import is needed; the skip marker lives in `test_db.py`):
 ```python
-import asyncio
 from collections.abc import Iterator
 
 import pytest
 from alembic import command
 from alembic.config import Config
 
-from specula_api.db.session import engine
+
+@pytest.fixture(scope="session")
+def migrated_db() -> Iterator[None]:
+    command.upgrade(Config("alembic.ini"), "head")
+    yield
+```
+
+- [ ] **Step 7: Write the DB integration tests (`test_db.py`)**
+
+`apps/api/tests/test_db.py` (defines its own skip marker locally — no import from conftest):
+```python
+import asyncio
+import uuid
+
+import pytest
+import sqlalchemy as sa
+from sqlalchemy.exc import IntegrityError
+
+from specula_api.db.models import User
+from specula_api.db.session import async_session, engine
 
 
 def _db_reachable() -> bool:
@@ -331,27 +349,6 @@ def _db_reachable() -> bool:
 requires_db = pytest.mark.skipif(
     not _db_reachable(), reason="Postgres not reachable (run `just up`)"
 )
-
-
-@pytest.fixture(scope="session")
-def migrated_db() -> Iterator[None]:
-    command.upgrade(Config("alembic.ini"), "head")
-    yield
-```
-
-- [ ] **Step 7: Write the DB integration tests (`test_db.py`)**
-
-`apps/api/tests/test_db.py`:
-```python
-import asyncio
-import uuid
-
-import sqlalchemy as sa
-from sqlalchemy.exc import IntegrityError
-
-from specula_api.db.models import User
-from specula_api.db.session import async_session, engine
-from tests.conftest import requires_db
 
 
 @requires_db
