@@ -8,6 +8,11 @@ const chipCls: Record<Kind, string> = {
   syn: "border-ink bg-ink text-paper",
   avoid: "border-transparent bg-warn-bg text-warn",
 };
+const xCls: Record<Kind, string> = {
+  default: "text-ink-3",
+  syn: "text-[rgba(251,250,246,0.5)]",
+  avoid: "text-ink-3",
+};
 
 export function TagEditor({
   values,
@@ -38,7 +43,7 @@ export function TagEditor({
             type="button"
             aria-label={`remove ${v}`}
             onClick={() => onChange(values.filter((x) => x !== v))}
-            className="font-mono cursor-pointer text-ink-3"
+            className={`font-mono cursor-pointer ${xCls[kind]}`}
           >
             ×
           </button>

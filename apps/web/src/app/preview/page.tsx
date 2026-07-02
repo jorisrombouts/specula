@@ -29,6 +29,8 @@ export default function PreviewPage() {
         <MatchMeter job={top} mstyle="figure" />
         <MatchMeter job={top} mstyle="ring" />
         <MatchMeter job={flagged} mstyle="bars" />
+        <MatchMeter job={flagged} mstyle="figure" />
+        <MatchMeter job={flagged} mstyle="ring" />
       </section>
 
       <p className="font-mono mb-4 mt-10 text-[10px] uppercase tracking-widest text-ink-3">

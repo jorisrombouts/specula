@@ -13,6 +13,7 @@ export function Button({
 }: { variant?: Variant } & React.ButtonHTMLAttributes<HTMLButtonElement>) {
   return (
     <button
+      type="button"
       className={`inline-flex items-center gap-[7px] rounded-[7px] border px-[14px] py-2 text-[12.5px] font-medium transition-colors ${cls[variant]} ${className}`}
       {...props}
     />
