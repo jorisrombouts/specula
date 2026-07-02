@@ -1,12 +1,6 @@
 import { NextResponse } from "next/server";
 import type { JobSort, JobsResponse } from "@specula/shared-types";
-import { jobs, lenses } from "@/lib/seed/data";
-import {
-  filterByLens,
-  scoreForLens,
-  deriveLensSummaries,
-  sortJobs,
-} from "@/lib/seed/logic";
+import { getJobs } from "@/lib/api/jobs";
 
 export function GET(request: Request): NextResponse<JobsResponse> {
   const url = new URL(request.url);
@@ -14,15 +8,5 @@ export function GET(request: Request): NextResponse<JobsResponse> {
   const sortParam = url.searchParams.get("sort");
   const sort: JobSort =
     sortParam === "deadline" || sortParam === "new" ? sortParam : "match";
-
-  const scored = filterByLens(jobs, lens).map((job) => {
-    const s = scoreForLens(job, lens);
-    return { ...job, match: s.match, factors: s.factors, redFlag: s.redFlag };
-  });
-
-  return NextResponse.json({
-    jobs: sortJobs(scored, sort),
-    lenses: deriveLensSummaries(lenses, jobs),
-    sort,
-  });
+  return NextResponse.json(getJobs(lens, sort));
 }

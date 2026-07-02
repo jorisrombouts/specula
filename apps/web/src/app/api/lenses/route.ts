@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
-import { jobs, lenses } from "@/lib/seed/data";
-import { deriveLensSummaries } from "@/lib/seed/logic";
+import { getLenses } from "@/lib/api/lenses";
 
 export function GET(): NextResponse {
-  return NextResponse.json(deriveLensSummaries(lenses, jobs));
+  return NextResponse.json(getLenses());
 }
