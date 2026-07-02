@@ -44,12 +44,14 @@ export function MatchMeter({
   const [done, setDone] = useState(false);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+    /* eslint-disable react-hooks/set-state-in-effect */
     setShown(false);
     setDone(false);
+    /* eslint-enable react-hooks/set-state-in-effect */
     const t = setTimeout(() => setShown(true), reveal ? 320 : 40);
     return () => clearTimeout(t);
-  }, [replay, reveal]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [replay]);
 
   useEffect(() => {
     if (!shown) return;
