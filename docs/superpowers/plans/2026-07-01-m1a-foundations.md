@@ -670,28 +670,39 @@ import { describe, it, expect, afterEach, vi } from "vitest";
 import { renderHook, cleanup } from "@testing-library/react";
 import { useCountUp } from "@/lib/use-count-up";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
 
 describe("useCountUp", () => {
   it("returns 0 when not running", () => {
     const { result } = renderHook(() => useCountUp(94, false, 640));
     expect(result.current).toBe(0);
   });
-  it("reaches the target when run completes", async () => {
-    vi.useFakeTimers();
-    const raf = vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation((cb) => {
-      // advance to well past duration on each frame
-      setTimeout(() => cb(1e6), 0);
+
+  it("counts up to the target and stops", () => {
+    // Mock RAF to invoke the callback SYNCHRONOUSLY with an increasing timestamp
+    // that jumps past the duration by the 2nd frame, so the loop terminates:
+    //   frame 1 → step(700): sets start=700, progress 0;
+    //   frame 2 → step(1400): progress (1400-700)/640 > 1 → sets target, no further RAF.
+    let now = 0;
+    vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation((cb: FrameRequestCallback) => {
+      now += 700;
+      cb(now);
       return 0;
     });
+    vi.spyOn(globalThis, "cancelAnimationFrame").mockImplementation(() => {});
     const { result } = renderHook(() => useCountUp(94, true, 640));
-    await vi.runAllTimersAsync();
     expect(result.current).toBe(94);
-    raf.mockRestore();
-    vi.useRealTimers();
   });
 });
 ```
+> NOTE: the earlier draft of this test used a mock that always passed the same
+> timestamp (`1e6`), so `start === t` every frame → progress stuck at 0 → infinite
+> loop. The synchronous increasing-timestamp mock above terminates deterministically.
+> Do **not** change `use-count-up.ts` to make this pass — the hook is a verbatim port
+> of `ui.jsx`; fix belongs in the test.
 
 - [ ] **Step 2: Run to verify failure**
 
