@@ -1,11 +1,14 @@
-import { ViewShell } from "@/components/view-shell";
+import { JobsView } from "@/components/jobs/jobs-view";
+import { getJobsPool } from "@/lib/api/jobs";
+import { getLenses } from "@/lib/api/lenses";
+import { getCandidate } from "@/lib/api/candidate";
 
 export default function JobsPage() {
   return (
-    <ViewShell
-      label="jobs"
-      title="Jobs"
-      sub="The scored, deduplicated pool of roles. Arrives in M1."
+    <JobsView
+      pool={getJobsPool()}
+      lenses={getLenses()}
+      candidate={getCandidate()}
     />
   );
 }
