@@ -90,3 +90,13 @@
     opacity: 0;
   }
 }
+
+/* Drawer plain slide-in (M1b; the row→drawer morph is M1c) */
+@keyframes drawerIn {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: none;
+  }
+}

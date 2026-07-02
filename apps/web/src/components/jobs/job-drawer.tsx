@@ -1,0 +1,142 @@
+"use client";
+
+import { useEffect } from "react";
+import type { Job, Candidate } from "@specula/shared-types";
+import { MatchMeter } from "@/components/atoms/match-meter";
+import { OverlapBar } from "@/components/atoms/overlap-bar";
+import { Tag } from "@/components/atoms/tag";
+import { Button } from "@/components/atoms/button";
+import {
+  Section,
+  InsightRecord,
+  SkillsSplit,
+  Lifecycle,
+  Feedback,
+} from "@/components/jobs/drawer-sections";
+
+export function JobDrawer({
+  job,
+  candidate,
+  onClose,
+}: {
+  job: Job;
+  candidate: Candidate;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <>
+      <div
+        onClick={onClose}
+        className="fixed inset-0 z-40 bg-[rgba(33,30,24,0.28)] backdrop-blur-[2px]"
+      />
+      <aside
+        role="dialog"
+        aria-modal="true"
+        className="fixed inset-y-0 right-0 z-[41] w-[560px] max-w-[94vw] overflow-y-auto border-l border-rule-2 bg-paper shadow-pop [animation:drawerIn_0.42s_cubic-bezier(0.3,0.9,0.3,1)]"
+      >
+        <div className="sticky top-0 z-[2] border-b border-rule bg-paper px-[28px] pt-[22px] pb-[18px]">
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            className="absolute right-[22px] top-[18px] flex h-[30px] w-[30px] items-center justify-center rounded-[7px] border border-rule-2 bg-card text-[16px] text-ink-2 hover:border-ink hover:text-ink"
+          >
+            ✕
+          </button>
+          <div className="mb-[10px] flex items-center gap-[9px] font-mono text-[11px] text-ink-2">
+            <span className="flex h-[18px] w-[18px] items-center justify-center rounded-[4px] bg-panel-2 font-mono text-[8.5px] font-semibold text-ink-2">
+              {job.logo}
+            </span>
+            {job.company}
+            <span className="text-rule-2">/</span>
+            {job.flag} {job.city} · {job.mode}
+            {job.isNew && (
+              <span className="ml-1">
+                <Tag variant="new">NEW</Tag>
+              </span>
+            )}
+          </div>
+          <h2 className="m-0 mr-[56px] mb-[8px] font-display text-[25px] font-semibold leading-[1.12] tracking-[-0.01em]">
+            {job.title}
+          </h2>
+          <div className="flex flex-wrap items-center gap-[8px] text-[13px] text-ink-2">
+            <span>{job.seniority}</span>
+            <span className="text-rule-2">·</span>
+            <span>{job.contract}</span>
+            <span className="text-rule-2">·</span>
+            <span className="font-mono">posted {job.posted}</span>
+          </div>
+        </div>
+
+        <div className="px-[28px] pt-[24px] pb-[60px]">
+          <Section>
+            <div className="mb-[16px] flex items-start gap-[22px]">
+              <MatchMeter job={job} mstyle="bars" />
+            </div>
+            <p className="max-w-none text-[13.5px] leading-[1.5] text-ink-2">
+              {job.rationale}
+            </p>
+            <div className="mt-[4px] flex flex-wrap items-center gap-[14px] font-mono text-[10.5px] text-ink-2">
+              <OverlapBar overlap={job.overlap} />
+              <span className={job.deadlineDays <= 7 ? "text-warn" : ""}>
+                ↳ closes in {job.deadlineDays} days
+              </span>
+            </div>
+          </Section>
+
+          <Section head="summary">
+            <p className="text-[14.5px] leading-[1.6] text-ink [text-wrap:pretty]">
+              {job.summary}
+            </p>
+          </Section>
+
+          <Section
+            head="skills · required vs your profile"
+            note={`${job.overlap[0]} of ${job.overlap[1]} matched`}
+          >
+            <SkillsSplit job={job} candidate={candidate} />
+          </Section>
+
+          <Section head="insight record" note="extracted · cached">
+            <InsightRecord job={job} />
+          </Section>
+
+          <Section head="responsibilities">
+            <ul className="m-0 list-disc pl-[18px] text-[13.5px] leading-[1.7] text-ink">
+              {job.responsibilities.map((r) => (
+                <li key={r}>{r}</li>
+              ))}
+            </ul>
+          </Section>
+
+          <Section head="application status">
+            <Lifecycle
+              status={
+                job.status && job.status !== "Dismissed" ? job.status : null
+              }
+              note=""
+            />
+          </Section>
+
+          <Section head="feedback" note="steers your recommender">
+            <Feedback />
+          </Section>
+
+          <div className="flex gap-[10px]">
+            <Button variant="pri" className="flex-1 justify-center">
+              ↗ Open posting
+            </Button>
+            <Button>★ Save</Button>
+          </div>
+        </div>
+      </aside>
+    </>
+  );
+}
