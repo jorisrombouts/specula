@@ -47,9 +47,9 @@ jobs:
         working-directory: apps/web
     steps:
       - uses: actions/checkout@v4
+      # pnpm version is read from the root package.json "packageManager" field
+      # (do not also set `version:` here — the action errors on a dual source).
       - uses: pnpm/action-setup@v4
-        with:
-          version: 9
       - uses: actions/setup-node@v4
         with:
           node-version: 20
