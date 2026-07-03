@@ -7,7 +7,7 @@ import type {
   LensSummary,
   Candidate,
 } from "@specula/shared-types";
-import { filterByLens, scoreForLens, sortJobs } from "@/lib/seed/logic";
+import { scoredList } from "@/lib/jobs-scoring";
 import { LensBar } from "@/components/jobs/lens-bar";
 import { JobRow } from "@/components/jobs/job-row";
 import { JobDrawer } from "@/components/jobs/job-drawer";
@@ -25,10 +25,7 @@ export function JobsView({
   const [sort, setSort] = useState<JobSort>("match");
   const [selected, setSelected] = useState<Job | null>(null);
 
-  const list = sortJobs(
-    filterByLens(pool, lens).map((j) => ({ ...j, ...scoreForLens(j, lens) })),
-    sort,
-  );
+  const list = scoredList(pool, lens, sort);
   const activeLens = lenses.find((l) => l.id === lens) ?? lenses[0];
   const closingSoon = list.filter(
     (j) => j.deadlineDays <= 7 && j.status !== "Applied",

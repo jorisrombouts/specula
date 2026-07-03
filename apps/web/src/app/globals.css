@@ -103,3 +103,85 @@
     transform: none;
   }
 }
+
+/* ---- M1c entrances (one-shot; gated via Tailwind motion-safe: at call sites) ---- */
+@keyframes rowIn {
+  from {
+    opacity: 0;
+    transform: translateX(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes rowExit {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+  to {
+    opacity: 0;
+    transform: translateX(30px);
+  }
+}
+@keyframes viewIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes barGrow {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+/* ---- M1c assembling intro (specula.css:134-153) ---- */
+@keyframes introMark {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+    letter-spacing: 0.22em;
+    filter: blur(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    letter-spacing: 0.02em;
+    filter: none;
+  }
+}
+@keyframes introRule {
+  to {
+    width: 316px;
+  }
+}
+@keyframes introLine {
+  to {
+    transform: scaleX(1);
+  }
+}
+@keyframes introFade {
+  to {
+    opacity: 1;
+  }
+}
+@keyframes introLeave {
+  to {
+    transform: translateY(-101%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .intro-anim {
+    animation-duration: 0.01s !important;
+    animation-delay: 0s !important;
+  }
+}
