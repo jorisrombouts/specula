@@ -54,3 +54,30 @@ up:
 # Stop local infra
 down:
     docker compose down
+
+# Regenerate the committed Linux pixel baselines in the pinned Playwright image
+# (matches CI's Chromium + font stack). Repo is mounted; node_modules is masked
+# by anonymous volumes so the host's darwin install never leaks into the Linux
+# container. Playwright starts its own dev server inside the container, so no
+# host networking is needed. Bump the image tag when @playwright/test is upgraded.
+visual-update:
+    docker run --rm \
+      -v "{{justfile_directory()}}:/work" -w /work \
+      -v /work/node_modules \
+      -v /work/apps/web/node_modules \
+      -v /work/packages/shared-types/node_modules \
+      -e CI=1 \
+      mcr.microsoft.com/playwright:v1.61.1-noble \
+      bash -c "corepack enable && pnpm install --frozen-lockfile && cd apps/web && pnpm exec playwright test --project=visual --update-snapshots"
+
+# Run the visual suite in the pinned image WITHOUT updating (compare-only) —
+# reproduces CI's pixel comparison locally.
+visual:
+    docker run --rm \
+      -v "{{justfile_directory()}}:/work" -w /work \
+      -v /work/node_modules \
+      -v /work/apps/web/node_modules \
+      -v /work/packages/shared-types/node_modules \
+      -e CI=1 \
+      mcr.microsoft.com/playwright:v1.61.1-noble \
+      bash -c "corepack enable && pnpm install --frozen-lockfile && cd apps/web && pnpm exec playwright test --project=visual"

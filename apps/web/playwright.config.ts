@@ -6,16 +6,32 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
   use: { trace: "on-first-retry" },
+  expect: {
+    toHaveScreenshot: {
+      animations: "disabled",
+      maxDiffPixelRatio: 0.01,
+      threshold: 0.2,
+    },
+  },
   projects: [
     {
       name: "public",
-      testIgnore: /authed\//,
+      testIgnore: [/authed\//, /visual\//],
       use: { ...devices["Desktop Chrome"], baseURL: "http://localhost:3000" },
     },
     {
       name: "authed",
       testMatch: /authed\//,
       use: { ...devices["Desktop Chrome"], baseURL: "http://localhost:3001" },
+    },
+    {
+      name: "visual",
+      testMatch: /visual\/.*\.spec\.ts$/,
+      use: {
+        ...devices["Desktop Chrome"],
+        baseURL: "http://localhost:3001",
+        viewport: { width: 1440, height: 900 },
+      },
     },
   ],
   webServer: [

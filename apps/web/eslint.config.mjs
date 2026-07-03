@@ -16,6 +16,13 @@ const eslintConfig = defineConfig([
     // Second dist dir for the E2E authed dev server (see next.config.ts).
     ".next-authed/**",
   ]),
+  {
+    // Playwright E2E specs/fixtures aren't React — the fixture `use` callback
+    // (`await use(page)`) trips react-hooks/rules-of-hooks as if it were React's
+    // `use()` hook. Scope that rule off for the e2e dir.
+    files: ["e2e/**/*.ts"],
+    rules: { "react-hooks/rules-of-hooks": "off" },
+  },
   eslintConfigPrettier,
 ]);
 
