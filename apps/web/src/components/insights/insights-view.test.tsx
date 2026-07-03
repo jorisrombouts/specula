@@ -1,10 +1,13 @@
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import { render, screen, cleanup } from "@testing-library/react";
 import { InsightsView } from "@/components/insights/insights-view";
 import { DemandTrend } from "@/components/insights/demand-trend";
 import { getInsights } from "@/lib/api/insights";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
 const insights = getInsights();
 
 describe("InsightsView", () => {
@@ -18,6 +21,16 @@ describe("InsightsView", () => {
   });
 
   it("renders the analysed total at its final value", () => {
+    // CountUp animates via requestAnimationFrame; mock it to jump straight
+    // past the duration so the count-up settles on its final value.
+    let now = 0;
+    vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation(
+      (cb: FrameRequestCallback) => {
+        now += 1000;
+        cb(now);
+        return 0;
+      },
+    );
     const { container } = render(<InsightsView insights={insights} />);
     expect(container.querySelector("header")).toHaveTextContent("312");
   });

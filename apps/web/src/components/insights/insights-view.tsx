@@ -1,5 +1,6 @@
 import type { Insights } from "@specula/shared-types";
 import { Tag } from "@/components/atoms/tag";
+import { CountUp } from "@/components/insights/count-up";
 import { DemandTrend } from "@/components/insights/demand-trend";
 
 function Panel({
@@ -54,7 +55,7 @@ export function InsightsView({ insights: ins }: { insights: Insights }) {
           <span className="h-[26px] w-px bg-rule" />
           <div>
             <b className="text-[15px] font-semibold text-ink">
-              {ins.totalAnalysed}
+              <CountUp value={ins.totalAnalysed} />
             </b>{" "}
             analysed
           </div>
@@ -84,7 +85,7 @@ export function InsightsView({ insights: ins }: { insights: Insights }) {
                 </span>
                 <span className="h-[9px] overflow-hidden rounded-[3px] bg-panel-2">
                   <span
-                    className={`block h-full rounded-[3px] ${s.up ? "bg-accent" : "bg-ink"}`}
+                    className={`block h-full origin-left rounded-[3px] motion-safe:[animation:barGrow_0.9s_cubic-bezier(0.3,1,0.3,1)] ${s.up ? "bg-accent" : "bg-ink"}`}
                     style={{ width: `${s.pct}%` }}
                   />
                 </span>
@@ -112,7 +113,7 @@ export function InsightsView({ insights: ins }: { insights: Insights }) {
                 <span className="text-[12.5px] font-medium">{s.k}</span>
                 <span className="h-[9px] overflow-hidden rounded-[3px] bg-panel-2">
                   <span
-                    className="block h-full rounded-[3px]"
+                    className="block h-full origin-left rounded-[3px] motion-safe:[animation:barGrow_0.9s_cubic-bezier(0.3,1,0.3,1)]"
                     style={{
                       width: `${(s.v / seniorMax) * 100}%`,
                       background:
@@ -190,7 +191,7 @@ export function InsightsView({ insights: ins }: { insights: Insights }) {
                 <span className="text-[12.5px] font-medium">{c.name}</span>
                 <span className="h-[9px] overflow-hidden rounded-[3px] bg-panel-2">
                   <span
-                    className="block h-full rounded-[3px]"
+                    className="block h-full origin-left rounded-[3px] motion-safe:[animation:barGrow_0.9s_cubic-bezier(0.3,1,0.3,1)]"
                     style={{
                       width: `${(c.n / 12) * 100}%`,
                       background: i === 0 ? "var(--accent)" : "var(--ink)",
