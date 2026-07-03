@@ -63,9 +63,12 @@ export function IntroOverlay({
           ))}
         </div>
         <div className="intro-anim mt-[28px] font-mono text-[12px] text-ink-2 opacity-0 [animation:introFade_0.7s_ease_1.2s_forwards]">
-          synced · <b className="font-semibold text-ink">{rolesShown}</b> roles
-          tracked · <b className="font-semibold text-ink">{isNew}</b> new this
-          week
+          synced ·{" "}
+          <b className="font-semibold text-ink">
+            {reduce ? roles : rolesShown}
+          </b>{" "}
+          roles tracked · <b className="font-semibold text-ink">{isNew}</b> new
+          this week
         </div>
       </div>
       <div className="intro-anim absolute bottom-[40px] left-0 right-0 text-center font-mono text-[10px] uppercase tracking-[0.14em] text-ink-3 opacity-0 [animation:introFade_0.7s_ease_1.6s_forwards]">
