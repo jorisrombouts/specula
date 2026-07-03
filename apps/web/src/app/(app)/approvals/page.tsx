@@ -1,11 +1,6 @@
-import { ViewShell } from "@/components/view-shell";
+import { ApprovalsView } from "@/components/approvals/approvals-view";
+import { getApprovals } from "@/lib/api/approvals";
 
 export default function ApprovalsPage() {
-  return (
-    <ViewShell
-      label="approvals"
-      title="Approval queue"
-      sub="Candidate companies awaiting your decision. Arrives in M1."
-    />
-  );
+  return <ApprovalsView approvals={getApprovals()} />;
 }
