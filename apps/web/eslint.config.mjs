@@ -13,6 +13,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Second dist dir for the E2E authed dev server (see next.config.ts).
+    ".next-authed/**",
   ]),
   eslintConfigPrettier,
 ]);
