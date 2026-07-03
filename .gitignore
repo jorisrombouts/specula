@@ -9,14 +9,21 @@ __pycache__/
 # Node / Next.js
 node_modules/
 .next/
+.next-*/
 out/
 *.tsbuildinfo
 next-env.d.ts
+.pnpm-store/
 
 # Playwright
 test-results/
 playwright-report/
 .last-run.json
+apps/web/e2e/visual/.auth/
+# Only the Linux pixel baselines are committed (they match CI); a local macOS/
+# Windows run writes platform-specific snapshots that must never be committed.
+*-darwin.png
+*-win32.png
 
 # Env & secrets
 .env

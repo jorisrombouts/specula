@@ -19,13 +19,27 @@ export const test = base.extend<{ stablePage: Page }>({
 
 export { expect };
 
-// Stabilize the page for a full-page screenshot. The app shell is a fixed-height
+// Navigate to a route, stabilize, then size the viewport to the full content
+// height so the caller can take a plain viewport screenshot of the whole view.
+// (A viewport shot, not Playwright's `fullPage`: the app shell scrolls its inner
+// panel, not the document, so we grow the viewport to the content instead.)
+export async function gotoStable(page: Page, path: string): Promise<void> {
+  await page.goto(path, { waitUntil: "networkidle" });
+  await stabilize(page);
+  const h = await page.evaluate(() =>
+    Math.ceil(document.documentElement.scrollHeight),
+  );
+  await page.setViewportSize({ width: 1440, height: Math.max(900, h) });
+  await page.waitForTimeout(400);
+}
+
+// Stabilize the page for the screenshot. The app shell is a fixed-height
 // (`h-screen`) grid with an inner `main-scroll` scroll container, so the document
-// itself never grows and `fullPage` would clip everything below the fold.
+// itself never grows and a naive capture would clip everything below the fold.
 // Neutralize the height/overflow so the page flows to its natural full height and
-// `fullPage` captures the whole view. (On the public sign-in page the `:has`
-// selector simply matches nothing — a harmless no-op.) Then wait for the network
-// to settle and the self-hosted fonts to paint.
+// `document.documentElement.scrollHeight` reports the real content height. (On the
+// public sign-in page the `:has` selector simply matches nothing — a harmless
+// no-op.) Then wait for the network to settle and the self-hosted fonts to paint.
 export async function stabilize(page: Page): Promise<void> {
   await page.waitForLoadState("networkidle");
   await page.addStyleTag({

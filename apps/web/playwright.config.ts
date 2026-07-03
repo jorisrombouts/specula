@@ -1,18 +1,15 @@
 import { defineConfig, devices } from "@playwright/test";
 
+// Functional E2E harness (dev servers). The pixel-regression suite lives in its
+// own config — playwright.visual.config.ts — because it needs a production build,
+// not a dev server. The `visual/` specs are ignored here.
 export default defineConfig({
   testDir: "./e2e",
+  testIgnore: /visual\//,
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
   use: { trace: "on-first-retry" },
-  expect: {
-    toHaveScreenshot: {
-      animations: "disabled",
-      maxDiffPixelRatio: 0.01,
-      threshold: 0.2,
-    },
-  },
   projects: [
     {
       name: "public",
@@ -23,15 +20,6 @@ export default defineConfig({
       name: "authed",
       testMatch: /authed\//,
       use: { ...devices["Desktop Chrome"], baseURL: "http://localhost:3001" },
-    },
-    {
-      name: "visual",
-      testMatch: /visual\/.*\.spec\.ts$/,
-      use: {
-        ...devices["Desktop Chrome"],
-        baseURL: "http://localhost:3001",
-        viewport: { width: 1440, height: 900 },
-      },
     },
   ],
   webServer: [
