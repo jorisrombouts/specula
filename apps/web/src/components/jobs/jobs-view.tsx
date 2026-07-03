@@ -10,6 +10,7 @@ import type {
 import { scoredList } from "@/lib/jobs-scoring";
 import { flipDelta } from "@/lib/flip";
 import { usePrefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
+import { useTweaks } from "@/lib/tweaks";
 import { LensBar } from "@/components/jobs/lens-bar";
 import { JobRow } from "@/components/jobs/job-row";
 import { JobDrawer } from "@/components/jobs/job-drawer";
@@ -33,6 +34,8 @@ export function JobsView({
   const [morphFrom, setMorphFrom] = useState<MorphRects | null>(null);
   const [exiting, setExiting] = useState<Exit[]>([]);
   const reduce = usePrefersReducedMotion();
+  const { tweaks } = useTweaks();
+  const compact = tweaks.density === "compact";
 
   const list = scoredList(pool, lens, sort);
   const activeLens = lenses.find((l) => l.id === lens) ?? lenses[0];
@@ -193,7 +196,15 @@ export function JobsView({
           </div>
         )}
         {list.map((j, i) => (
-          <JobRow key={j.id} job={j} i={i} onOpen={openJob} sig={sig} />
+          <JobRow
+            key={j.id}
+            job={j}
+            i={i}
+            onOpen={openJob}
+            sig={sig}
+            mstyle={tweaks.mstyle}
+            compact={compact}
+          />
         ))}
         {exiting.map((e) => (
           <JobRow
@@ -203,6 +214,8 @@ export function JobsView({
             onOpen={openJob}
             sig={sig}
             exit
+            mstyle={tweaks.mstyle}
+            compact={compact}
             style={{
               position: "absolute",
               top: e.top,
@@ -218,6 +231,7 @@ export function JobsView({
           job={selected}
           candidate={candidate}
           morphFrom={morphFrom}
+          mstyle={tweaks.mstyle}
           onClose={() => {
             setSelected(null);
             setMorphFrom(null);

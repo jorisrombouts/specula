@@ -9,7 +9,15 @@ const base = pool[0];
 
 describe("JobRow", () => {
   it("renders index, title, company, deadline", () => {
-    render(<JobRow job={base} i={0} onOpen={() => {}} sig="all|match" />);
+    render(
+      <JobRow
+        job={base}
+        i={0}
+        onOpen={() => {}}
+        sig="all|match"
+        mstyle="bars"
+      />,
+    );
     expect(screen.getByText("01")).toBeInTheDocument();
     expect(screen.getByText(base.title)).toBeInTheDocument();
     expect(screen.getByText(base.company)).toBeInTheDocument();
@@ -25,6 +33,7 @@ describe("JobRow", () => {
         i={0}
         onOpen={() => {}}
         sig="all|match"
+        mstyle="bars"
       />,
     );
     expect(screen.getByText("NEW")).toBeInTheDocument();
@@ -35,6 +44,7 @@ describe("JobRow", () => {
         i={0}
         onOpen={() => {}}
         sig="all|match"
+        mstyle="bars"
       />,
     );
     expect(screen.queryByText("NEW")).toBeNull();
@@ -47,6 +57,7 @@ describe("JobRow", () => {
         i={0}
         onOpen={() => {}}
         sig="all|match"
+        mstyle="bars"
       />,
     );
     expect(
@@ -58,7 +69,9 @@ describe("JobRow", () => {
 
   it("calls onOpen with the job when clicked", () => {
     const onOpen = vi.fn();
-    render(<JobRow job={base} i={2} onOpen={onOpen} sig="all|match" />);
+    render(
+      <JobRow job={base} i={2} onOpen={onOpen} sig="all|match" mstyle="bars" />,
+    );
     fireEvent.click(screen.getByText(base.title));
     expect(onOpen).toHaveBeenCalledWith(
       base,
@@ -74,6 +87,7 @@ describe("JobRow", () => {
         i={0}
         onOpen={onOpen}
         sig="all|match"
+        mstyle="bars"
         exit
         style={{ top: 5 }}
       />,

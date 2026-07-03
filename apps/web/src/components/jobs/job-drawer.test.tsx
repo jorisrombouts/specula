@@ -10,7 +10,14 @@ const candidate = getCandidate();
 
 describe("JobDrawer", () => {
   it("renders the title + all section heads", () => {
-    render(<JobDrawer job={job} candidate={candidate} onClose={() => {}} />);
+    render(
+      <JobDrawer
+        job={job}
+        candidate={candidate}
+        onClose={() => {}}
+        mstyle="bars"
+      />,
+    );
     expect(
       screen.getByRole("heading", { name: job.title }),
     ).toBeInTheDocument();
@@ -31,7 +38,14 @@ describe("JobDrawer", () => {
   it("closes (via the animation fallback) on the ✕ button", () => {
     vi.useFakeTimers();
     const onClose = vi.fn();
-    render(<JobDrawer job={job} candidate={candidate} onClose={onClose} />);
+    render(
+      <JobDrawer
+        job={job}
+        candidate={candidate}
+        onClose={onClose}
+        mstyle="bars"
+      />,
+    );
     fireEvent.click(screen.getByLabelText("Close"));
     vi.advanceTimersByTime(360); // jsdom's animate() stub never fires onfinish
     expect(onClose).toHaveBeenCalledTimes(1);
@@ -41,7 +55,14 @@ describe("JobDrawer", () => {
   it("closes (via the animation fallback) on Escape", () => {
     vi.useFakeTimers();
     const onClose = vi.fn();
-    render(<JobDrawer job={job} candidate={candidate} onClose={onClose} />);
+    render(
+      <JobDrawer
+        job={job}
+        candidate={candidate}
+        onClose={onClose}
+        mstyle="bars"
+      />,
+    );
     fireEvent.keyDown(window, { key: "Escape" });
     vi.advanceTimersByTime(360); // jsdom's animate() stub never fires onfinish
     expect(onClose).toHaveBeenCalledTimes(1);
@@ -51,7 +72,14 @@ describe("JobDrawer", () => {
   it("fires onClose only once when Escape is pressed twice within the close window", () => {
     vi.useFakeTimers();
     const onClose = vi.fn();
-    render(<JobDrawer job={job} candidate={candidate} onClose={onClose} />);
+    render(
+      <JobDrawer
+        job={job}
+        candidate={candidate}
+        onClose={onClose}
+        mstyle="bars"
+      />,
+    );
     fireEvent.keyDown(window, { key: "Escape" });
     fireEvent.keyDown(window, { key: "Escape" }); // second press mid-close
     vi.advanceTimersByTime(400); // past the 360ms fallback
@@ -60,7 +88,14 @@ describe("JobDrawer", () => {
   });
 
   it("reveals the MatchMeter when opened without a morph (no rects)", () => {
-    render(<JobDrawer job={job} candidate={candidate} onClose={() => {}} />);
+    render(
+      <JobDrawer
+        job={job}
+        candidate={candidate}
+        onClose={() => {}}
+        mstyle="bars"
+      />,
+    );
     // reveal mode shows the "scoring…" label initially (MatchMeter reveal)
     expect(screen.getByText(/scoring/i)).toBeInTheDocument();
   });

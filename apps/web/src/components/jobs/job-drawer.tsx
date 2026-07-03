@@ -3,6 +3,7 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
 import type { Job, Candidate } from "@specula/shared-types";
 import type { MorphRects } from "@/components/jobs/morph";
+import type { Mstyle } from "@/lib/tweaks-init";
 import { morphScale } from "@/lib/flip";
 import { usePrefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
 import { MatchMeter } from "@/components/atoms/match-meter";
@@ -22,11 +23,13 @@ export function JobDrawer({
   candidate,
   onClose,
   morphFrom = null,
+  mstyle,
 }: {
   job: Job;
   candidate: Candidate;
   onClose: () => void;
   morphFrom?: MorphRects | null;
+  mstyle: Mstyle;
 }) {
   const reduce = usePrefersReducedMotion();
   const panelRef = useRef<HTMLElement>(null);
@@ -190,7 +193,7 @@ export function JobDrawer({
               <div ref={meterRef} className="origin-top-left">
                 <MatchMeter
                   job={job}
-                  mstyle="bars"
+                  mstyle={mstyle}
                   reveal={!morphFrom}
                   replay={job.id}
                 />

@@ -3,6 +3,7 @@
 import { useRef } from "react";
 import type { Job } from "@specula/shared-types";
 import type { MorphRects } from "@/components/jobs/morph";
+import type { Mstyle } from "@/lib/tweaks-init";
 import { MatchMeter } from "@/components/atoms/match-meter";
 import { OverlapBar } from "@/components/atoms/overlap-bar";
 import { Tag } from "@/components/atoms/tag";
@@ -12,6 +13,8 @@ export function JobRow({
   i,
   onOpen,
   sig,
+  mstyle,
+  compact = false,
   exit = false,
   style,
 }: {
@@ -19,6 +22,8 @@ export function JobRow({
   i: number;
   onOpen: (job: Job, rects: MorphRects) => void;
   sig: string;
+  mstyle: Mstyle;
+  compact?: boolean;
   exit?: boolean;
   style?: React.CSSProperties;
 }) {
@@ -58,7 +63,7 @@ export function JobRow({
         <div className="flex flex-wrap items-center gap-[10px]">
           <h3
             data-jtitle
-            className="m-0 font-display text-[20px] font-semibold leading-[1.12] tracking-[-0.005em]"
+            className={`m-0 font-display ${compact ? "text-[18px]" : "text-[20px]"} font-semibold leading-[1.12] tracking-[-0.005em]`}
           >
             {job.title}
           </h3>
@@ -95,9 +100,14 @@ export function JobRow({
             </>
           )}
         </div>
-        <p className="m-0 mb-[10px] max-w-[62ch] text-[13px] leading-[1.5] text-ink-2 [text-wrap:pretty]">
-          {job.rationale}
-        </p>
+        {!compact && (
+          <p
+            data-jrat
+            className="m-0 mb-[10px] max-w-[62ch] text-[13px] leading-[1.5] text-ink-2 [text-wrap:pretty]"
+          >
+            {job.rationale}
+          </p>
+        )}
         <div className="flex flex-wrap items-center gap-[14px] font-mono text-[10.5px] text-ink-2">
           <OverlapBar overlap={job.overlap} />
           <span className="tracking-[0.01em]">
@@ -111,7 +121,7 @@ export function JobRow({
         </div>
       </div>
       <div data-meter>
-        <MatchMeter job={job} mstyle="bars" replay={sig} countUp={!exit} />
+        <MatchMeter job={job} mstyle={mstyle} replay={sig} countUp={!exit} />
       </div>
     </article>
   );

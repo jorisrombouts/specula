@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach, vi } from "vitest";
+import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
 import {
   render,
   screen,
@@ -11,20 +11,32 @@ import { JobsView } from "@/components/jobs/jobs-view";
 import { getJobsPool } from "@/lib/api/jobs";
 import { getLenses } from "@/lib/api/lenses";
 import { getCandidate } from "@/lib/api/candidate";
+import { TweaksProvider } from "@/lib/tweaks";
+import { STORAGE_KEY } from "@/lib/tweaks-init";
 
 afterEach(cleanup);
+beforeEach(() => localStorage.clear());
 const props = {
   pool: getJobsPool(),
   lenses: getLenses(),
   candidate: getCandidate(),
 };
 
+function renderView(tweaks?: Record<string, unknown>) {
+  if (tweaks) localStorage.setItem(STORAGE_KEY, JSON.stringify(tweaks));
+  return render(
+    <TweaksProvider>
+      <JobsView {...props} />
+    </TweaksProvider>,
+  );
+}
+
 describe("JobsView", () => {
   it("renders DERIVED header counts (13 in pool · 7 new)", () => {
     // <header> nested in <section> is NOT a `banner` landmark — query the
     // element directly. The header prose contains no digits, so the only
     // "13"/"7" come from the derived pool/new counts.
-    const { container } = render(<JobsView {...props} />);
+    const { container } = renderView();
     const header = container.querySelector("header")!;
     expect(header).toHaveTextContent("13");
     expect(header).toHaveTextContent("in pool");
@@ -33,17 +45,17 @@ describe("JobsView", () => {
   });
 
   it("renders all 13 rows in the default (all) lens", () => {
-    const { container } = render(<JobsView {...props} />);
+    const { container } = renderView();
     expect(container.querySelectorAll("article[data-fid]")).toHaveLength(13);
   });
 
   it("shows the deadline banner (some role closes within 7 days)", () => {
-    render(<JobsView {...props} />);
+    renderView();
     expect(screen.getByText(/close within 7 days/)).toBeInTheDocument();
   });
 
   it("switching to a non-all lens shows the re-scored toolbar note", () => {
-    render(<JobsView {...props} />);
+    renderView();
     expect(screen.queryByText(/match re-scored for this lens/)).toBeNull();
     // "Remote" also appears in job-mode spans + the toolbar, so scope to the
     // lens buttons (the only <button>s until the drawer opens).
@@ -58,7 +70,7 @@ describe("JobsView", () => {
 
   it("opens the drawer for a clicked row and closes it on Escape", () => {
     vi.useFakeTimers();
-    render(<JobsView {...props} />);
+    renderView();
     const firstRow = document.querySelector("article[data-fid]") as HTMLElement;
     const title = within(firstRow).getByRole("heading").textContent!;
     fireEvent.click(firstRow);
@@ -72,5 +84,18 @@ describe("JobsView", () => {
     });
     expect(screen.queryByRole("dialog")).toBeNull();
     vi.useRealTimers();
+  });
+
+  it("passes the mstyle tweak to the row meters (figure style)", () => {
+    const { container } = renderView({ mstyle: "figure" });
+    // figure style renders the 54px number with data-style="figure"
+    expect(container.querySelector('[data-style="figure"]')).not.toBeNull();
+  });
+
+  it("hides the row rationale under compact density", async () => {
+    const { container } = renderView({ density: "compact" });
+    // rationale paragraph carries data-jrat; hidden when compact
+    await Promise.resolve();
+    expect(container.querySelector("[data-jrat]")).toBeNull();
   });
 });
