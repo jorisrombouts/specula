@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import type { Job, Candidate } from "@specula/shared-types";
 import type { MorphRects } from "@/components/jobs/morph";
 import { morphScale } from "@/lib/flip";
@@ -33,17 +33,17 @@ export function JobDrawer({
   const scrimRef = useRef<HTMLDivElement>(null);
   const titleRef = useRef<HTMLHeadingElement>(null);
   const meterRef = useRef<HTMLDivElement>(null);
-  const [closing, setClosing] = useState(false);
+  const closingRef = useRef(false);
 
   const handleClose = () => {
-    if (closing) return;
+    if (closingRef.current) return;
     const panel = panelRef.current;
     const scrim = scrimRef.current;
     if (reduce || !panel) {
       onClose();
       return;
     }
-    setClosing(true);
+    closingRef.current = true;
     if (scrim)
       scrim.animate([{ opacity: 1 }, { opacity: 0 }], {
         duration: 260,
