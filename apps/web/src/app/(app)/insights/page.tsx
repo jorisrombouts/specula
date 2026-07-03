@@ -1,11 +1,6 @@
-import { ViewShell } from "@/components/view-shell";
+import { InsightsView } from "@/components/insights/insights-view";
+import { getInsights } from "@/lib/api/insights";
 
 export default function InsightsPage() {
-  return (
-    <ViewShell
-      label="insights"
-      title="Insights"
-      sub="Personal market intelligence. Arrives in M1."
-    />
-  );
+  return <InsightsView insights={getInsights()} />;
 }
