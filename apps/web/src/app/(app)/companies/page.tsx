@@ -1,11 +1,6 @@
-import { ViewShell } from "@/components/view-shell";
+import { CompaniesView } from "@/components/companies/companies-view";
+import { getCompanies } from "@/lib/api/companies";
 
 export default function CompaniesPage() {
-  return (
-    <ViewShell
-      label="companies"
-      title="Companies"
-      sub="Your registry of tracked companies. Arrives in M1."
-    />
-  );
+  return <CompaniesView companies={getCompanies()} />;
 }
