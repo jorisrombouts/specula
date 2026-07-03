@@ -63,3 +63,16 @@ jobs:
       - run: pnpm test
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm test:e2e
+      # Pixel regression against a production build (own config, own server). The
+      # committed Linux baselines are generated in the pinned Playwright image
+      # (`just visual-update`), which matches this runner's Chromium + font stack.
+      - run: pnpm exec playwright test --config playwright.visual.config.ts
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-failure-report
+          path: |
+            apps/web/playwright-report/
+            apps/web/test-results/
+          retention-days: 7
+          if-no-files-found: ignore
