@@ -7,6 +7,7 @@ import {
   Source_Serif_4,
 } from "next/font/google";
 import "./globals.css";
+import { INIT_SCRIPT } from "@/lib/tweaks-init";
 
 // Spectral is NOT a variable font on Google Fonts — explicit weights are required.
 const spectral = Spectral({
@@ -46,6 +47,9 @@ export default function RootLayout({
       lang="en"
       className={`${spectral.variable} ${hanken.variable} ${geistMono.variable} ${newsreader.variable} ${sourceSerif.variable}`}
     >
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: INIT_SCRIPT }} />
+      </head>
       <body className="bg-paper text-ink">{children}</body>
     </html>
   );
