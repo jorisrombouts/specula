@@ -7,16 +7,29 @@ export function JobRow({
   job,
   i,
   onOpen,
+  sig,
+  exit = false,
+  style,
 }: {
   job: Job;
   i: number;
   onOpen: (job: Job) => void;
+  sig: string;
+  exit?: boolean;
+  style?: React.CSSProperties;
 }) {
   return (
     <article
       data-fid={job.id}
-      onClick={() => onOpen(job)}
-      className="relative isolate grid cursor-pointer grid-cols-[30px_1fr_248px] items-start gap-[18px] border-b border-rule py-[var(--row-py)] before:absolute before:inset-y-0 before:-inset-x-[14px] before:-z-10 before:rounded-[8px] before:bg-panel before:opacity-0 before:transition-opacity hover:before:opacity-100"
+      data-exit={exit ? "" : undefined}
+      onClick={() => !exit && onOpen(job)}
+      style={exit ? style : { animationDelay: `${i * 45}ms` }}
+      className={
+        "relative isolate grid grid-cols-[30px_1fr_248px] items-start gap-[18px] border-b border-rule py-[var(--row-py)] " +
+        (exit
+          ? "pointer-events-none z-0 [animation:rowExit_0.46s_cubic-bezier(0.4,0,0.6,1)_forwards]"
+          : "cursor-pointer opacity-0 motion-safe:[animation:rowIn_0.5s_cubic-bezier(0.2,0.7,0.2,1)_forwards] motion-reduce:opacity-100 before:absolute before:inset-y-0 before:-inset-x-[14px] before:-z-10 before:rounded-[8px] before:bg-panel before:opacity-0 before:transition-opacity hover:before:opacity-100")
+      }
     >
       <div className="pt-[4px] font-mono text-[13px] text-ink-3">
         {String(i + 1).padStart(2, "0")}
@@ -74,7 +87,7 @@ export function JobRow({
           {!job.originVerified && <Tag variant="flag">⚐ origin unverified</Tag>}
         </div>
       </div>
-      <MatchMeter job={job} mstyle="bars" />
+      <MatchMeter job={job} mstyle="bars" replay={sig} countUp={!exit} />
     </article>
   );
 }

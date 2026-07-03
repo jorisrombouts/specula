@@ -9,7 +9,7 @@ const base = pool[0];
 
 describe("JobRow", () => {
   it("renders index, title, company, deadline", () => {
-    render(<JobRow job={base} i={0} onOpen={() => {}} />);
+    render(<JobRow job={base} i={0} onOpen={() => {}} sig="all|match" />);
     expect(screen.getByText("01")).toBeInTheDocument();
     expect(screen.getByText(base.title)).toBeInTheDocument();
     expect(screen.getByText(base.company)).toBeInTheDocument();
@@ -19,10 +19,24 @@ describe("JobRow", () => {
   });
 
   it("shows the NEW tag only when isNew", () => {
-    render(<JobRow job={{ ...base, isNew: true }} i={0} onOpen={() => {}} />);
+    render(
+      <JobRow
+        job={{ ...base, isNew: true }}
+        i={0}
+        onOpen={() => {}}
+        sig="all|match"
+      />,
+    );
     expect(screen.getByText("NEW")).toBeInTheDocument();
     cleanup();
-    render(<JobRow job={{ ...base, isNew: false }} i={0} onOpen={() => {}} />);
+    render(
+      <JobRow
+        job={{ ...base, isNew: false }}
+        i={0}
+        onOpen={() => {}}
+        sig="all|match"
+      />,
+    );
     expect(screen.queryByText("NEW")).toBeNull();
   });
 
@@ -32,6 +46,7 @@ describe("JobRow", () => {
         job={{ ...base, redFlag: "Low required-skill overlap", salary: null }}
         i={0}
         onOpen={() => {}}
+        sig="all|match"
       />,
     );
     expect(
@@ -43,8 +58,27 @@ describe("JobRow", () => {
 
   it("calls onOpen with the job when clicked", () => {
     const onOpen = vi.fn();
-    render(<JobRow job={base} i={2} onOpen={onOpen} />);
+    render(<JobRow job={base} i={2} onOpen={onOpen} sig="all|match" />);
     fireEvent.click(screen.getByText(base.title));
     expect(onOpen).toHaveBeenCalledWith(base);
+  });
+
+  it("renders an exit row (non-interactive, positioned) without crashing", () => {
+    const onOpen = vi.fn();
+    const { container } = render(
+      <JobRow
+        job={base}
+        i={0}
+        onOpen={onOpen}
+        sig="all|match"
+        exit
+        style={{ top: 5 }}
+      />,
+    );
+    const article = container.querySelector("article[data-fid]")!;
+    expect(article.getAttribute("data-exit")).toBe("");
+    // exit rows don't open the drawer
+    fireEvent.click(article);
+    expect(onOpen).not.toHaveBeenCalled();
   });
 });

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import type {
   Job,
   JobSort,
@@ -8,9 +8,14 @@ import type {
   Candidate,
 } from "@specula/shared-types";
 import { scoredList } from "@/lib/jobs-scoring";
+import { flipDelta } from "@/lib/flip";
+import { usePrefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
 import { LensBar } from "@/components/jobs/lens-bar";
 import { JobRow } from "@/components/jobs/job-row";
 import { JobDrawer } from "@/components/jobs/job-drawer";
+
+type Pos = { top: number; left: number; width: number };
+type Exit = { job: Job; top: number; left: number; width: number };
 
 export function JobsView({
   pool,
@@ -24,6 +29,8 @@ export function JobsView({
   const [lens, setLens] = useState("all");
   const [sort, setSort] = useState<JobSort>("match");
   const [selected, setSelected] = useState<Job | null>(null);
+  const [exiting, setExiting] = useState<Exit[]>([]);
+  const reduce = usePrefersReducedMotion();
 
   const list = scoredList(pool, lens, sort);
   const activeLens = lenses.find((l) => l.id === lens) ?? lenses[0];
@@ -31,11 +38,73 @@ export function JobsView({
     (j) => j.deadlineDays <= 7 && j.status !== "Applied",
   ).length;
   const newCount = pool.filter((j) => j.isNew).length;
+  const sig = lens + "|" + sort;
+
+  const listRef = useRef<HTMLDivElement>(null);
+  const flip = useRef<{
+    pos: Map<string, Pos>;
+    jobs: Map<string, Job>;
+    init: boolean;
+  }>({
+    pos: new Map(),
+    jobs: new Map(),
+    init: false,
+  });
+
+  // FLIP: on lens/sort change, fly surviving rows old→new and fade out leavers.
+  useLayoutEffect(() => {
+    const cont = listRef.current;
+    if (!cont) return;
+    const rows = Array.from(
+      cont.querySelectorAll<HTMLElement>("article[data-fid]:not([data-exit])"),
+    );
+    const newPos = new Map<string, Pos>();
+    rows.forEach((n) =>
+      newPos.set(n.dataset.fid!, {
+        top: n.offsetTop,
+        left: n.offsetLeft,
+        width: n.offsetWidth,
+      }),
+    );
+    const newJobs = new Map(list.map((j) => [j.id, j]));
+    if (flip.current.init && !reduce) {
+      rows.forEach((n) => {
+        const prev = flip.current.pos.get(n.dataset.fid!);
+        const next = newPos.get(n.dataset.fid!);
+        if (!prev || !next) return;
+        const d = flipDelta(prev, next);
+        if (d) {
+          n.animate(
+            [
+              { transform: `translate(${d.dx}px, ${d.dy}px)` },
+              { transform: "none" },
+            ],
+            { duration: 560, easing: "cubic-bezier(.3,.9,.3,1)" },
+          );
+        }
+      });
+      const exits: Exit[] = [];
+      flip.current.pos.forEach((p, id) => {
+        if (!newPos.has(id)) {
+          const j = flip.current.jobs.get(id);
+          if (j) exits.push({ job: j, ...p });
+        }
+      });
+      if (exits.length) {
+        setExiting(exits);
+        setTimeout(() => setExiting([]), 480);
+      }
+    }
+    flip.current.pos = newPos;
+    flip.current.jobs = newJobs;
+    flip.current.init = true;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sig]);
 
   return (
     <section
       data-screen-label="jobs"
-      className="mx-auto max-w-[1180px] px-[34px] pt-[30px] pb-16"
+      className="mx-auto max-w-[1180px] px-[34px] pt-[30px] pb-16 motion-safe:[animation:viewIn_0.4s_cubic-bezier(0.2,0.7,0.2,1)]"
     >
       <header className="mb-1 flex items-end justify-between border-b-[1.5px] border-ink pb-[18px]">
         <div className="flex flex-col gap-[7px]">
@@ -108,7 +177,7 @@ export function JobsView({
         <span>match · role / skill / loc</span>
       </div>
 
-      <div className="relative">
+      <div className="relative" ref={listRef}>
         {list.length === 0 && (
           <div className="px-[20px] py-[80px] text-center text-ink-2">
             <div className="mb-[14px] text-[34px] opacity-40">⬚</div>
@@ -117,7 +186,23 @@ export function JobsView({
           </div>
         )}
         {list.map((j, i) => (
-          <JobRow key={j.id} job={j} i={i} onOpen={setSelected} />
+          <JobRow key={j.id} job={j} i={i} onOpen={setSelected} sig={sig} />
+        ))}
+        {exiting.map((e) => (
+          <JobRow
+            key={"x" + e.job.id}
+            job={e.job}
+            i={0}
+            onOpen={setSelected}
+            sig={sig}
+            exit
+            style={{
+              position: "absolute",
+              top: e.top,
+              left: e.left,
+              width: e.width,
+            }}
+          />
         ))}
       </div>
 
