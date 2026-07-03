@@ -1,11 +1,6 @@
-import { ViewShell } from "@/components/view-shell";
+import { ProfilesView } from "@/components/profiles/profiles-view";
+import { getLenses } from "@/lib/api/lenses";
 
 export default function ProfilesPage() {
-  return (
-    <ViewShell
-      label="profiles"
-      title="Search profiles"
-      sub="Lenses over the shared pool. Arrives in M1."
-    />
-  );
+  return <ProfilesView lenses={getLenses()} />;
 }
