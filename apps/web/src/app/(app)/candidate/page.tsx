@@ -1,11 +1,9 @@
-import { ViewShell } from "@/components/view-shell";
+import { CandidateView } from "@/components/candidate/candidate-view";
+import { getCandidate } from "@/lib/api/candidate";
+import { getSkillsGap } from "@/lib/api/skills-gap";
 
 export default function CandidatePage() {
   return (
-    <ViewShell
-      label="candidate"
-      title="Candidate"
-      sub="Who you are — the profile that drives scoring. Arrives in M1."
-    />
+    <CandidateView candidate={getCandidate()} skillsGap={getSkillsGap()} />
   );
 }
