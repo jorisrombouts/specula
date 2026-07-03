@@ -98,4 +98,27 @@ describe("JobRow", () => {
     fireEvent.click(article);
     expect(onOpen).not.toHaveBeenCalled();
   });
+
+  it("an exit row in card mode keeps the card layout (not the 3-col row grid)", () => {
+    const { container } = render(
+      <JobRow
+        job={base}
+        i={0}
+        onOpen={() => {}}
+        sig="all|match"
+        mstyle="bars"
+        card
+        exit
+        style={{ top: 5 }}
+      />,
+    );
+    const article = container.querySelector("article[data-fid]")!;
+    // card layout = flex flex-col + rounded card; NOT the row 3-col grid template
+    expect(article.className).toContain("flex-col");
+    expect(article.className).toContain("rounded-[14px]");
+    expect(article.className).not.toContain("grid-cols-[30px_1fr_248px]");
+    // still an exit row (fades out, non-interactive)
+    expect(article.getAttribute("data-exit")).toBe("");
+    expect(article.className).toContain("rowExit");
+  });
 });
