@@ -98,4 +98,15 @@ describe("JobsView", () => {
     await Promise.resolve();
     expect(container.querySelector("[data-jrat]")).toBeNull();
   });
+
+  it("renders the Jobs list as a 2-col card grid under layout=cards (no colhead)", () => {
+    const { container } = renderView({ layout: "cards" });
+    // the list container becomes a grid; the column header is hidden
+    expect(container.querySelector("[data-jlist][data-cards]")).not.toBeNull();
+    expect(container.querySelector("[data-colhead]")).toBeNull();
+    // rows carry the card marker
+    expect(
+      container.querySelector("article[data-fid][data-card]"),
+    ).not.toBeNull();
+  });
 });

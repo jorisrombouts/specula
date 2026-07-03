@@ -29,3 +29,20 @@ test("the tweaks panel opens, applies an accent, and persists across reload", as
     )
     .toBe("#2D5BBF");
 });
+
+test("switching Job layout to cards restyles the list as a card grid", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    try {
+      sessionStorage.setItem("specula_intro", "1");
+    } catch {}
+  });
+  await page.goto("/jobs");
+  await page.getByRole("button", { name: /tweaks/i }).click();
+  await page.getByRole("radio", { name: "cards" }).click();
+  await expect(page.locator("[data-jlist][data-cards]")).toBeVisible();
+  await expect(
+    page.locator("article[data-fid][data-card]").first(),
+  ).toBeVisible();
+});

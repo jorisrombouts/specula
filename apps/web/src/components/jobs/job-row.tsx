@@ -15,6 +15,7 @@ export function JobRow({
   sig,
   mstyle,
   compact = false,
+  card = false,
   exit = false,
   style,
 }: {
@@ -24,6 +25,7 @@ export function JobRow({
   sig: string;
   mstyle: Mstyle;
   compact?: boolean;
+  card?: boolean;
   exit?: boolean;
   style?: React.CSSProperties;
 }) {
@@ -47,18 +49,23 @@ export function JobRow({
       ref={ref}
       data-fid={job.id}
       data-exit={exit ? "" : undefined}
+      data-card={card ? "" : undefined}
       onClick={open}
       style={exit ? style : { animationDelay: `${i * 45}ms` }}
       className={
-        "relative isolate grid grid-cols-[30px_1fr_248px] items-start gap-[18px] border-b border-rule py-[var(--row-py)] " +
-        (exit
-          ? "pointer-events-none z-0 [animation:rowExit_0.46s_cubic-bezier(0.4,0,0.6,1)_forwards]"
-          : "cursor-pointer opacity-0 motion-safe:[animation:rowIn_0.5s_cubic-bezier(0.2,0.7,0.2,1)_forwards] motion-reduce:opacity-100 before:absolute before:inset-y-0 before:-inset-x-[14px] before:-z-10 before:rounded-[8px] before:bg-panel before:opacity-0 before:transition-opacity hover:before:opacity-100")
+        exit
+          ? "relative isolate grid grid-cols-[30px_1fr_248px] items-start gap-[18px] border-b border-rule py-[var(--row-py)] pointer-events-none z-0 [animation:rowExit_0.46s_cubic-bezier(0.4,0,0.6,1)_forwards]"
+          : card
+            ? "relative isolate flex cursor-pointer flex-col gap-[10px] rounded-[14px] border border-rule bg-card p-[18px] shadow-card"
+            : "relative isolate grid cursor-pointer grid-cols-[30px_1fr_248px] items-start gap-[18px] border-b border-rule py-[var(--row-py)] " +
+              "opacity-0 motion-safe:[animation:rowIn_0.5s_cubic-bezier(0.2,0.7,0.2,1)_forwards] motion-reduce:opacity-100 before:absolute before:inset-y-0 before:-inset-x-[14px] before:-z-10 before:rounded-[8px] before:bg-panel before:opacity-0 before:transition-opacity hover:before:opacity-100"
       }
     >
-      <div className="pt-[4px] font-mono text-[13px] text-ink-3">
-        {String(i + 1).padStart(2, "0")}
-      </div>
+      {!card && (
+        <div className="pt-[4px] font-mono text-[13px] text-ink-3">
+          {String(i + 1).padStart(2, "0")}
+        </div>
+      )}
       <div>
         <div className="flex flex-wrap items-center gap-[10px]">
           <h3
@@ -120,9 +127,22 @@ export function JobRow({
           {!job.originVerified && <Tag variant="flag">⚐ origin unverified</Tag>}
         </div>
       </div>
-      <div data-meter>
-        <MatchMeter job={job} mstyle={mstyle} replay={sig} countUp={!exit} />
-      </div>
+      {card ? (
+        <div className="mt-[14px] w-full border-t border-dashed border-rule pt-[14px]">
+          <div data-meter>
+            <MatchMeter
+              job={job}
+              mstyle={mstyle}
+              replay={sig}
+              countUp={!exit}
+            />
+          </div>
+        </div>
+      ) : (
+        <div data-meter>
+          <MatchMeter job={job} mstyle={mstyle} replay={sig} countUp={!exit} />
+        </div>
+      )}
     </article>
   );
 }

@@ -36,6 +36,7 @@ export function JobsView({
   const reduce = usePrefersReducedMotion();
   const { tweaks } = useTweaks();
   const compact = tweaks.density === "compact";
+  const cards = tweaks.layout === "cards";
 
   const list = scoredList(pool, lens, sort);
   const activeLens = lenses.find((l) => l.id === lens) ?? lenses[0];
@@ -181,13 +182,25 @@ export function JobsView({
         </div>
       </div>
 
-      <div className="grid grid-cols-[30px_1fr_248px] gap-[18px] border-b border-rule pt-[14px] pb-[9px] font-mono text-[9.5px] uppercase tracking-[0.08em] text-ink-3">
-        <span>#</span>
-        <span>role / source / facts</span>
-        <span>match · role / skill / loc</span>
-      </div>
+      {!cards && (
+        <div
+          data-colhead
+          className="grid grid-cols-[30px_1fr_248px] gap-[18px] border-b border-rule pt-[14px] pb-[9px] font-mono text-[9.5px] uppercase tracking-[0.08em] text-ink-3"
+        >
+          <span>#</span>
+          <span>role / source / facts</span>
+          <span>match · role / skill / loc</span>
+        </div>
+      )}
 
-      <div className="relative" ref={listRef}>
+      <div
+        ref={listRef}
+        data-jlist
+        data-cards={cards ? "" : undefined}
+        className={
+          cards ? "relative grid grid-cols-2 gap-[14px] pt-[14px]" : "relative"
+        }
+      >
         {list.length === 0 && (
           <div className="px-[20px] py-[80px] text-center text-ink-2">
             <div className="mb-[14px] text-[34px] opacity-40">⬚</div>
@@ -204,6 +217,7 @@ export function JobsView({
             sig={sig}
             mstyle={tweaks.mstyle}
             compact={compact}
+            card={cards}
           />
         ))}
         {exiting.map((e) => (
@@ -216,6 +230,7 @@ export function JobsView({
             exit
             mstyle={tweaks.mstyle}
             compact={compact}
+            card={cards}
             style={{
               position: "absolute",
               top: e.top,
