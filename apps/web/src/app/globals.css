@@ -5,6 +5,9 @@
   --accent: #2e7d4f;
   --accent-bg: #e7f0e9;
   --accent-ink: #1e5d39;
+  --ink: #211e18;
+  --ink-2: #7c7567;
+  --ink-3: #aba493;
   /* density (driven by [data-density] on <html>; default = comfortable) */
   --row-py: 17px;
   --gutter: 34px;
@@ -21,9 +24,9 @@
   --color-panel: #f4f2eb;
   --color-panel-2: #eeebe1;
   --color-card: #ffffff;
-  --color-ink: #211e18;
-  --color-ink-2: #7c7567;
-  --color-ink-3: #aba493;
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
   --color-rule: #e4e0d5;
   --color-rule-2: #d6d1c2;
   --color-accent: var(--accent);
