@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import { render, screen, cleanup } from "@testing-library/react";
 import { MatchMeter, matchColor } from "@/components/atoms/match-meter";
 import type { Job } from "@specula/shared-types";
@@ -64,5 +64,15 @@ describe("MatchMeter", () => {
     render(<MatchMeter job={base} mstyle="figure" />);
     expect(screen.getByText("90")).toBeInTheDocument();
     expect(screen.queryByText("ROLE")).toBeNull();
+  });
+  it("shows the final match number immediately under reduced motion (no count-up)", () => {
+    vi.stubGlobal("matchMedia", (q: string) => ({
+      matches: true, // prefers-reduced-motion: reduce
+      media: q,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    }));
+    render(<MatchMeter job={base} mstyle="bars" countUp replay="x" />);
+    expect(screen.getByText("90")).toBeInTheDocument();
   });
 });

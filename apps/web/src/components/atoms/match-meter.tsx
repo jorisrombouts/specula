@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import type { Job } from "@specula/shared-types";
 import { useCountUp } from "@/lib/use-count-up";
+import { usePrefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
 
 export function matchColor(job: Job): string {
   if (job.redFlag) return "text-warn";
@@ -59,10 +60,15 @@ export function MatchMeter({
     return () => clearTimeout(t);
   }, [shown, reveal]);
 
+  const reduce = usePrefersReducedMotion();
   const counting = countUp || reveal;
-  const num = useCountUp(job.match, shown && counting, reveal ? 780 : 640);
-  const display = counting ? num : job.match;
-  const ringDeg = (shown ? job.match : 0) * 3.6;
+  const num = useCountUp(
+    job.match,
+    shown && counting && !reduce,
+    reveal ? 780 : 640,
+  );
+  const display = counting && !reduce ? num : job.match;
+  const ringDeg = (shown || reduce ? job.match : 0) * 3.6;
 
   // figure: 54px number, no factor bars
   if (mstyle === "figure") {
@@ -89,7 +95,9 @@ export function MatchMeter({
             className="w-[74px] h-[74px] rounded-full flex items-center justify-center shrink-0"
             style={{
               background: `conic-gradient(${colVar} ${ringDeg}deg, var(--color-panel-2) 0)`,
-              transition: "background .9s cubic-bezier(.3,1,.3,1)",
+              transition: reduce
+                ? "none"
+                : "background .9s cubic-bezier(.3,1,.3,1)",
             }}
           >
             <div className="w-[58px] h-[58px] rounded-full bg-card flex flex-col items-center justify-center shadow-[inset_0_0_0_1px_var(--color-rule)]">
@@ -148,8 +156,8 @@ export function MatchMeter({
             </span>
             <span className="h-[7px] bg-panel-2 rounded-[2px] overflow-hidden">
               <span
-                className={`block h-full rounded-[2px] transition-[width] duration-[800ms] [transition-timing-function:cubic-bezier(0.3,1,0.3,1)] ${v < 50 ? "bg-warn" : colBg}`}
-                style={{ width: shown ? `${v}%` : "0%" }}
+                className={`block h-full rounded-[2px] transition-[width] duration-[800ms] [transition-timing-function:cubic-bezier(0.3,1,0.3,1)] motion-reduce:transition-none ${v < 50 ? "bg-warn" : colBg}`}
+                style={{ width: shown || reduce ? `${v}%` : "0%" }}
               />
             </span>
             <span className="font-mono text-[10px] text-ink-2 text-right">
