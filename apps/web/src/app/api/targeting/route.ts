@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { targeting } from "@/lib/seed/data";
+import { getTargeting } from "@/lib/api/targeting";
 
 export function GET(): NextResponse {
-  return NextResponse.json(targeting);
+  return NextResponse.json(getTargeting());
 }
