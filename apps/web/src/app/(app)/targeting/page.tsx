@@ -1,11 +1,6 @@
-import { ViewShell } from "@/components/view-shell";
+import { TargetingView } from "@/components/targeting/targeting-view";
+import { getTargeting } from "@/lib/api/targeting";
 
 export default function TargetingPage() {
-  return (
-    <ViewShell
-      label="targeting"
-      title="Targeting"
-      sub="What you want — roles, must-haves, values. Arrives in M1."
-    />
-  );
+  return <TargetingView targeting={getTargeting()} />;
 }
