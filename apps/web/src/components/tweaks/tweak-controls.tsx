@@ -24,7 +24,7 @@ export function Segmented({
             aria-checked={o === value}
             aria-label={o}
             onClick={() => onChange(o)}
-            className={`flex-1 rounded-[6px] px-[6px] py-[4px] text-[11.5px] font-medium capitalize transition-colors motion-safe:transition-colors ${
+            className={`flex-1 rounded-[6px] px-[6px] py-[4px] text-[11.5px] font-medium capitalize motion-safe:transition-colors ${
               o === value
                 ? "bg-card text-ink shadow-card"
                 : "text-ink-2 hover:text-ink"

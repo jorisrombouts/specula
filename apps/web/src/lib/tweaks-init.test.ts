@@ -49,7 +49,6 @@ describe("applyTweaks", () => {
         font: "Newsreader",
       }),
     );
-    // eslint-disable-next-line no-eval
     eval(INIT_SCRIPT);
     expect(document.documentElement.style.getPropertyValue("--accent")).toBe(
       "#7A4FB0",

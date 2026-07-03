@@ -1,11 +1,5 @@
 import { describe, it, expect, afterEach, beforeEach } from "vitest";
-import {
-  render,
-  screen,
-  fireEvent,
-  cleanup,
-  within,
-} from "@testing-library/react";
+import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import { TweaksProvider } from "@/lib/tweaks";
 import { TweaksPanel } from "@/components/tweaks/tweaks-panel";
 import { STORAGE_KEY } from "@/lib/tweaks-init";

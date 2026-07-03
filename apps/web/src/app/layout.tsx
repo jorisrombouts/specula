@@ -46,6 +46,7 @@ export default function RootLayout({
     <html
       lang="en"
       className={`${spectral.variable} ${hanken.variable} ${geistMono.variable} ${newsreader.variable} ${sourceSerif.variable}`}
+      suppressHydrationWarning
     >
       <head>
         <script dangerouslySetInnerHTML={{ __html: INIT_SCRIPT }} />
