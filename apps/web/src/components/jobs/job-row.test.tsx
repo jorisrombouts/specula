@@ -60,7 +60,10 @@ describe("JobRow", () => {
     const onOpen = vi.fn();
     render(<JobRow job={base} i={2} onOpen={onOpen} sig="all|match" />);
     fireEvent.click(screen.getByText(base.title));
-    expect(onOpen).toHaveBeenCalledWith(base);
+    expect(onOpen).toHaveBeenCalledWith(
+      base,
+      expect.objectContaining({ title: expect.anything() }),
+    );
   });
 
   it("renders an exit row (non-interactive, positioned) without crashing", () => {

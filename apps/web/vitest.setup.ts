@@ -13,3 +13,13 @@ if (typeof window !== "undefined" && !window.matchMedia) {
       removeEventListener: () => {},
     }) as unknown as MediaQueryList;
 }
+
+// jsdom doesn't implement the Web Animations API (Element.animate). Stub a
+// no-op so components using WAAPI (morph/FLIP/drawer transitions) can run in
+// tests without throwing; they fall back to their own setTimeout completions.
+if (typeof Element !== "undefined" && !Element.prototype.animate) {
+  Element.prototype.animate = (() =>
+    ({
+      onfinish: null,
+    }) as unknown as Animation) as typeof Element.prototype.animate;
+}

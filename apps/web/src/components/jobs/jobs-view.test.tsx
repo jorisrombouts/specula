@@ -1,10 +1,11 @@
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import {
   render,
   screen,
   fireEvent,
   cleanup,
   within,
+  act,
 } from "@testing-library/react";
 import { JobsView } from "@/components/jobs/jobs-view";
 import { getJobsPool } from "@/lib/api/jobs";
@@ -56,6 +57,7 @@ describe("JobsView", () => {
   });
 
   it("opens the drawer for a clicked row and closes it on Escape", () => {
+    vi.useFakeTimers();
     render(<JobsView {...props} />);
     const firstRow = document.querySelector("article[data-fid]") as HTMLElement;
     const title = within(firstRow).getByRole("heading").textContent!;
@@ -65,6 +67,10 @@ describe("JobsView", () => {
       screen.getByRole("heading", { name: title, level: 2 }),
     ).toBeInTheDocument();
     fireEvent.keyDown(window, { key: "Escape" });
+    act(() => {
+      vi.advanceTimersByTime(360); // jsdom's animate() stub never fires onfinish
+    });
     expect(screen.queryByRole("dialog")).toBeNull();
+    vi.useRealTimers();
   });
 });

@@ -1,7 +1,10 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Job, Candidate } from "@specula/shared-types";
+import type { MorphRects } from "@/components/jobs/morph";
+import { morphScale } from "@/lib/flip";
+import { usePrefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
 import { MatchMeter } from "@/components/atoms/match-meter";
 import { OverlapBar } from "@/components/atoms/overlap-bar";
 import { Tag } from "@/components/atoms/tag";
@@ -18,33 +21,136 @@ export function JobDrawer({
   job,
   candidate,
   onClose,
+  morphFrom = null,
 }: {
   job: Job;
   candidate: Candidate;
   onClose: () => void;
+  morphFrom?: MorphRects | null;
 }) {
+  const reduce = usePrefersReducedMotion();
+  const panelRef = useRef<HTMLElement>(null);
+  const scrimRef = useRef<HTMLDivElement>(null);
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  const meterRef = useRef<HTMLDivElement>(null);
+  const [closing, setClosing] = useState(false);
+
+  const handleClose = () => {
+    if (closing) return;
+    const panel = panelRef.current;
+    const scrim = scrimRef.current;
+    if (reduce || !panel) {
+      onClose();
+      return;
+    }
+    setClosing(true);
+    if (scrim)
+      scrim.animate([{ opacity: 1 }, { opacity: 0 }], {
+        duration: 260,
+        easing: "ease",
+        fill: "forwards",
+      });
+    const a = panel.animate(
+      [
+        { transform: "none", opacity: 1 },
+        { transform: "translateX(46px)", opacity: 0 },
+      ],
+      { duration: 300, easing: "cubic-bezier(.4,0,.7,1)", fill: "forwards" },
+    );
+    let done = false;
+    const finish = () => {
+      if (!done) {
+        done = true;
+        onClose();
+      }
+    };
+    a.onfinish = finish;
+    setTimeout(finish, 360);
+  };
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") handleClose();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useLayoutEffect(() => {
+    const panel = panelRef.current;
+    const scrim = scrimRef.current;
+    if (!panel) return;
+    if (scrim)
+      scrim.animate([{ opacity: 0 }, { opacity: 1 }], {
+        duration: 300,
+        easing: "ease",
+      });
+    if (reduce) return;
+    if (morphFrom) {
+      panel.animate([{ opacity: 0 }, { opacity: 1 }], {
+        duration: 240,
+        easing: "ease",
+      });
+      const morph = (
+        el: HTMLElement | null,
+        src: DOMRect,
+        srcFont: number | null,
+        delay: number,
+      ) => {
+        if (!el) return;
+        const d = el.getBoundingClientRect();
+        const dx = src.left - d.left;
+        const dy = src.top - d.top;
+        const s = srcFont
+          ? morphScale(srcFont, parseFloat(getComputedStyle(el).fontSize))
+          : morphScale(src.width, d.width);
+        el.animate(
+          [
+            {
+              transform: `translate(${dx}px, ${dy}px) scale(${s})`,
+              opacity: 0.55,
+            },
+            { transform: "none", opacity: 1 },
+          ],
+          {
+            duration: 540,
+            delay,
+            easing: "cubic-bezier(.4,0,.12,1)",
+            fill: "backwards",
+          },
+        );
+      };
+      morph(titleRef.current, morphFrom.title, morphFrom.titleFont, 0);
+      morph(meterRef.current, morphFrom.meter, null, 40);
+    } else {
+      panel.animate(
+        [{ transform: "translateX(100%)" }, { transform: "none" }],
+        {
+          duration: 440,
+          easing: "cubic-bezier(.3,.9,.3,1)",
+        },
+      );
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <>
       <div
-        onClick={onClose}
+        ref={scrimRef}
+        onClick={handleClose}
         className="fixed inset-0 z-40 bg-[rgba(33,30,24,0.28)] backdrop-blur-[2px]"
       />
       <aside
+        ref={panelRef}
         role="dialog"
         aria-modal="true"
-        className="fixed inset-y-0 right-0 z-[41] w-[560px] max-w-[94vw] overflow-y-auto border-l border-rule-2 bg-paper shadow-pop [animation:drawerIn_0.42s_cubic-bezier(0.3,0.9,0.3,1)]"
+        className="fixed inset-y-0 right-0 z-[41] w-[560px] max-w-[94vw] overflow-y-auto border-l border-rule-2 bg-paper shadow-pop"
       >
         <div className="sticky top-0 z-[2] border-b border-rule bg-paper px-[28px] pt-[22px] pb-[18px]">
           <button
-            onClick={onClose}
+            onClick={handleClose}
             aria-label="Close"
             className="absolute right-[22px] top-[18px] flex h-[30px] w-[30px] items-center justify-center rounded-[7px] border border-rule-2 bg-card text-[16px] text-ink-2 hover:border-ink hover:text-ink"
           >
@@ -63,7 +169,10 @@ export function JobDrawer({
               </span>
             )}
           </div>
-          <h2 className="m-0 mr-[56px] mb-[8px] font-display text-[25px] font-semibold leading-[1.12] tracking-[-0.01em]">
+          <h2
+            ref={titleRef}
+            className="m-0 mr-[56px] mb-[8px] origin-top-left font-display text-[25px] font-semibold leading-[1.12] tracking-[-0.01em]"
+          >
             {job.title}
           </h2>
           <div className="flex flex-wrap items-center gap-[8px] text-[13px] text-ink-2">
@@ -78,7 +187,14 @@ export function JobDrawer({
         <div className="px-[28px] pt-[24px] pb-[60px]">
           <Section>
             <div className="mb-[16px] flex items-start gap-[22px]">
-              <MatchMeter job={job} mstyle="bars" />
+              <div ref={meterRef} className="origin-top-left">
+                <MatchMeter
+                  job={job}
+                  mstyle="bars"
+                  reveal={!morphFrom}
+                  replay={job.id}
+                />
+              </div>
             </div>
             <p className="max-w-none text-[13.5px] leading-[1.5] text-ink-2">
               {job.rationale}

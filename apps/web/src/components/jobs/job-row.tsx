@@ -1,4 +1,8 @@
+"use client";
+
+import { useRef } from "react";
 import type { Job } from "@specula/shared-types";
+import type { MorphRects } from "@/components/jobs/morph";
 import { MatchMeter } from "@/components/atoms/match-meter";
 import { OverlapBar } from "@/components/atoms/overlap-bar";
 import { Tag } from "@/components/atoms/tag";
@@ -13,16 +17,32 @@ export function JobRow({
 }: {
   job: Job;
   i: number;
-  onOpen: (job: Job) => void;
+  onOpen: (job: Job, rects: MorphRects) => void;
   sig: string;
   exit?: boolean;
   style?: React.CSSProperties;
 }) {
+  const ref = useRef<HTMLElement>(null);
+  const open = () => {
+    if (exit) return;
+    const root = ref.current;
+    if (!root) return;
+    const titleEl = root.querySelector<HTMLElement>("[data-jtitle]");
+    const meterEl = root.querySelector<HTMLElement>("[data-meter]");
+    if (!titleEl || !meterEl) return;
+    onOpen(job, {
+      title: titleEl.getBoundingClientRect(),
+      titleFont: parseFloat(getComputedStyle(titleEl).fontSize),
+      meter: meterEl.getBoundingClientRect(),
+    });
+  };
+
   return (
     <article
+      ref={ref}
       data-fid={job.id}
       data-exit={exit ? "" : undefined}
-      onClick={() => !exit && onOpen(job)}
+      onClick={open}
       style={exit ? style : { animationDelay: `${i * 45}ms` }}
       className={
         "relative isolate grid grid-cols-[30px_1fr_248px] items-start gap-[18px] border-b border-rule py-[var(--row-py)] " +
@@ -36,7 +56,10 @@ export function JobRow({
       </div>
       <div>
         <div className="flex flex-wrap items-center gap-[10px]">
-          <h3 className="m-0 font-display text-[20px] font-semibold leading-[1.12] tracking-[-0.005em]">
+          <h3
+            data-jtitle
+            className="m-0 font-display text-[20px] font-semibold leading-[1.12] tracking-[-0.005em]"
+          >
             {job.title}
           </h3>
           {job.isNew && <Tag variant="new">NEW</Tag>}
@@ -87,7 +110,9 @@ export function JobRow({
           {!job.originVerified && <Tag variant="flag">⚐ origin unverified</Tag>}
         </div>
       </div>
-      <MatchMeter job={job} mstyle="bars" replay={sig} countUp={!exit} />
+      <div data-meter>
+        <MatchMeter job={job} mstyle="bars" replay={sig} countUp={!exit} />
+      </div>
     </article>
   );
 }

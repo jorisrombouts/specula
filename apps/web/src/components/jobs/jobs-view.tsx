@@ -13,6 +13,7 @@ import { usePrefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
 import { LensBar } from "@/components/jobs/lens-bar";
 import { JobRow } from "@/components/jobs/job-row";
 import { JobDrawer } from "@/components/jobs/job-drawer";
+import type { MorphRects } from "@/components/jobs/morph";
 
 type Pos = { top: number; left: number; width: number };
 type Exit = { job: Job; top: number; left: number; width: number };
@@ -29,6 +30,7 @@ export function JobsView({
   const [lens, setLens] = useState("all");
   const [sort, setSort] = useState<JobSort>("match");
   const [selected, setSelected] = useState<Job | null>(null);
+  const [morphFrom, setMorphFrom] = useState<MorphRects | null>(null);
   const [exiting, setExiting] = useState<Exit[]>([]);
   const reduce = usePrefersReducedMotion();
 
@@ -39,6 +41,11 @@ export function JobsView({
   ).length;
   const newCount = pool.filter((j) => j.isNew).length;
   const sig = lens + "|" + sort;
+
+  const openJob = (job: Job, rects: MorphRects) => {
+    setSelected(job);
+    setMorphFrom(rects);
+  };
 
   const listRef = useRef<HTMLDivElement>(null);
   const flip = useRef<{
@@ -186,14 +193,14 @@ export function JobsView({
           </div>
         )}
         {list.map((j, i) => (
-          <JobRow key={j.id} job={j} i={i} onOpen={setSelected} sig={sig} />
+          <JobRow key={j.id} job={j} i={i} onOpen={openJob} sig={sig} />
         ))}
         {exiting.map((e) => (
           <JobRow
             key={"x" + e.job.id}
             job={e.job}
             i={0}
-            onOpen={setSelected}
+            onOpen={openJob}
             sig={sig}
             exit
             style={{
@@ -210,7 +217,11 @@ export function JobsView({
         <JobDrawer
           job={selected}
           candidate={candidate}
-          onClose={() => setSelected(null)}
+          morphFrom={morphFrom}
+          onClose={() => {
+            setSelected(null);
+            setMorphFrom(null);
+          }}
         />
       )}
     </section>

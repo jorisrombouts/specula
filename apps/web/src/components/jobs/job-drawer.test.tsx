@@ -28,11 +28,29 @@ describe("JobDrawer", () => {
     expect(screen.getByText("★ Save")).toBeInTheDocument();
   });
 
-  it("closes on the ✕ button and on Escape", () => {
+  it("closes (via the animation fallback) on the ✕ button", () => {
+    vi.useFakeTimers();
     const onClose = vi.fn();
     render(<JobDrawer job={job} candidate={candidate} onClose={onClose} />);
     fireEvent.click(screen.getByLabelText("Close"));
+    vi.advanceTimersByTime(360); // jsdom's animate() stub never fires onfinish
+    expect(onClose).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
+  });
+
+  it("closes (via the animation fallback) on Escape", () => {
+    vi.useFakeTimers();
+    const onClose = vi.fn();
+    render(<JobDrawer job={job} candidate={candidate} onClose={onClose} />);
     fireEvent.keyDown(window, { key: "Escape" });
-    expect(onClose).toHaveBeenCalledTimes(2);
+    vi.advanceTimersByTime(360); // jsdom's animate() stub never fires onfinish
+    expect(onClose).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
+  });
+
+  it("reveals the MatchMeter when opened without a morph (no rects)", () => {
+    render(<JobDrawer job={job} candidate={candidate} onClose={() => {}} />);
+    // reveal mode shows the "scoring…" label initially (MatchMeter reveal)
+    expect(screen.getByText(/scoring/i)).toBeInTheDocument();
   });
 });
