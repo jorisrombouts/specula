@@ -1,11 +1,5 @@
 import { describe, it, expect, afterEach } from "vitest";
-import {
-  render,
-  screen,
-  fireEvent,
-  cleanup,
-  within,
-} from "@testing-library/react";
+import { render, fireEvent, cleanup, within } from "@testing-library/react";
 import { ProfilesView } from "@/components/profiles/profiles-view";
 import { getLenses } from "@/lib/api/lenses";
 
