@@ -17,6 +17,12 @@ dev-api:
 dev-web:
     cd apps/web && NODE_EXTRA_CA_CERTS="${NODE_EXTRA_CA_CERTS:-$HOME/.corp-ca.pem}" pnpm dev
 
+# Same as dev-web but skips the Google sign-in guard so the (app) views render
+# without logging in — for local UI work/verification only. DEV_AUTH_BYPASS is
+# double-gated in (app)/layout.tsx (dev + this flag) so it can NEVER run in prod.
+dev-web-noauth:
+    cd apps/web && DEV_AUTH_BYPASS=1 NODE_EXTRA_CA_CERTS="${NODE_EXTRA_CA_CERTS:-$HOME/.corp-ca.pem}" pnpm dev
+
 # Lint both apps
 lint:
     cd apps/api && uv run ruff check
