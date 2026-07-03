@@ -1,6 +1,8 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { Sidebar } from "@/components/sidebar";
+import { IntroGate } from "@/components/intro/intro-gate";
+import { getJobsPool } from "@/lib/api/jobs";
 
 export default async function AppLayout({
   children,
@@ -17,8 +19,12 @@ export default async function AppLayout({
     session?.user ??
     (bypass ? { name: "Dev (bypass)", email: "dev@local" } : null);
   if (!user) redirect("/signin");
+  const pool = getJobsPool();
+  const roles = pool.length;
+  const isNew = pool.filter((j) => j.isNew).length;
   return (
     <div className="grid h-screen grid-cols-[236px_1fr] overflow-hidden">
+      <IntroGate roles={roles} isNew={isNew} />
       <Sidebar user={user} />
       <main className="main-scroll relative overflow-y-auto">{children}</main>
     </div>
