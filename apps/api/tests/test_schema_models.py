@@ -1,3 +1,5 @@
+from sqlalchemy import DateTime
+
 from specula_api.db.base import Base
 
 PER_USER = {
@@ -35,3 +37,11 @@ def test_invariants_no_forbidden_columns() -> None:
     assert not any(c for c in Base.metadata.tables["targeting"].columns if "salary" in c.name)
     for t in ("lenses", "companies"):
         assert "count" not in Base.metadata.tables[t].columns
+
+
+def test_all_datetime_columns_are_timezone_aware() -> None:
+    # §4.1 uses `timestamptz` throughout; a naive `DateTime` would silently drift.
+    for table in Base.metadata.tables.values():
+        for col in table.columns:
+            if isinstance(col.type, DateTime):
+                assert col.type.timezone is True, f"{table.name}.{col.name} must be timestamptz"

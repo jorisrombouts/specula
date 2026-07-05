@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 
 from pgvector.sqlalchemy import Vector  # type: ignore[import-untyped]
-from sqlalchemy import ForeignKey, func, text
+from sqlalchemy import DateTime, ForeignKey, func, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -25,4 +25,8 @@ def user_fk(*, primary_key: bool = False, index: bool = True) -> Mapped[uuid.UUI
 
 
 class TimestampMixin:
-    updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
+    # timezone=True → Postgres `timestamptz`, matching the §4.1 DDL (the datetime
+    # annotation alone would derive a naive `DateTime`).
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
