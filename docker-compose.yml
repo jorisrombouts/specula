@@ -5,8 +5,11 @@ services:
       POSTGRES_USER: specula
       POSTGRES_PASSWORD: specula
       POSTGRES_DB: specula
+    # Host port 55432 (not the default 5432) so Specula's dev DB never collides with a
+    # system/Homebrew Postgres bound to loopback :5432 — which would silently shadow
+    # this pgvector container. Container port stays 5432; DATABASE_URL uses 55432.
     ports:
-      - "5432:5432"
+      - "55432:5432"
     volumes:
       - specula_pgdata:/var/lib/postgresql/data
     healthcheck:
