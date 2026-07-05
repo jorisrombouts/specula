@@ -1,3 +1,4 @@
+import time
 import uuid
 
 import jwt
@@ -41,18 +42,33 @@ def test_expired_token_raises() -> None:
 
 
 def test_wrong_audience_raises() -> None:
+    now = int(time.time())
     token = jwt.encode(
         {
             "sub": "google-sub-123",
             "email": "user@example.com",
             "iss": settings.service_jwt_issuer,
             "aud": "someone-else",
+            "iat": now,
+            "exp": now + 60,
         },
         settings.service_jwt_secret,
         algorithm="HS256",
     )
 
     with pytest.raises(jwt.InvalidAudienceError):
+        decode_service_jwt(token)
+
+
+def test_token_missing_required_claim_raises() -> None:
+    # A token missing exp/iat/iss is rejected outright by the require-options guard.
+    token = jwt.encode(
+        {"sub": "s", "email": "u@example.com", "aud": settings.service_jwt_audience},
+        settings.service_jwt_secret,
+        algorithm="HS256",
+    )
+
+    with pytest.raises(jwt.MissingRequiredClaimError):
         decode_service_jwt(token)
 
 

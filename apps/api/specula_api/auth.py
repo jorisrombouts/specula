@@ -21,6 +21,9 @@ def decode_service_jwt(token: str) -> ServiceClaims:
         audience=settings.service_jwt_audience,
         issuer=settings.service_jwt_issuer,
         leeway=5,
+        # Reject tokens missing these claims outright — a misconfigured minter must
+        # not be able to produce a non-expiring or unaudienced token.
+        options={"require": ["exp", "iat", "iss", "aud", "sub"]},
     )
     return ServiceClaims.model_validate(payload)
 
