@@ -12,6 +12,10 @@ services:
       - "55432:5432"
     volumes:
       - specula_pgdata:/var/lib/postgresql/data
+      # Runs once on a fresh volume: pre-creates extensions and downgrades the
+      # `specula` role to non-superuser so RLS/FORCE is actually enforced locally
+      # (superusers bypass RLS). See db/init.sql.
+      - ./db:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U specula -d specula"]
       interval: 5s

@@ -316,18 +316,20 @@ def upgrade() -> None:
         "approvals",
         "runs",
     ]
+    # `nullif(current_setting(...), '')` maps an unset/empty GUC to NULL so the
+    # predicate is simply false (zero rows, fail-closed) instead of raising
+    # "invalid input syntax for type uuid" on an empty string.
+    tenant = "nullif(current_setting('app.user_id', true), '')::uuid"
     for t in PER_USER:
         op.execute(f"ALTER TABLE {t} ENABLE ROW LEVEL SECURITY")
         op.execute(f"ALTER TABLE {t} FORCE ROW LEVEL SECURITY")
         op.execute(
             f"CREATE POLICY tenant_isolation ON {t} "
-            f"USING (user_id = current_setting('app.user_id', true)::uuid) "
-            f"WITH CHECK (user_id = current_setting('app.user_id', true)::uuid)"
+            f"USING (user_id = {tenant}) "
+            f"WITH CHECK (user_id = {tenant})"
         )
     op.execute("ALTER TABLE users ENABLE ROW LEVEL SECURITY")  # enabled, NOT forced
-    op.execute(
-        "CREATE POLICY users_self ON users USING (id = current_setting('app.user_id', true)::uuid)"
-    )
+    op.execute(f"CREATE POLICY users_self ON users USING (id = {tenant})")
 
 
 def downgrade() -> None:
