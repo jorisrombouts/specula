@@ -1,9 +1,11 @@
+from collections.abc import AsyncGenerator
 from uuid import UUID
 
 import jwt
-from fastapi import Header, HTTPException
-from sqlalchemy import select
+from fastapi import Depends, Header, HTTPException
+from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from specula_api.auth import decode_service_jwt
 from specula_api.db.models import User
@@ -36,3 +38,18 @@ async def get_current_user_id(authorization: str = Header(...)) -> UUID:
                 raise
             return existing.id
         return new_user.id
+
+
+async def get_session(
+    user_id: UUID = Depends(get_current_user_id),
+) -> AsyncGenerator[AsyncSession, None]:
+    async with async_session() as session:
+        await session.execute(
+            text("SELECT set_config('app.user_id', :uid, true)").bindparams(uid=str(user_id))
+        )
+        try:
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
