@@ -6,6 +6,9 @@ class Settings(BaseSettings):
 
     app_env: str = "development"
     database_url: str = "postgresql+asyncpg://specula:specula@localhost:5432/specula"
+    service_jwt_secret: str = ""
+    service_jwt_issuer: str = "specula-web"
+    service_jwt_audience: str = "specula-api"
 
 
 settings = Settings()
