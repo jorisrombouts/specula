@@ -4,26 +4,35 @@ import type {
   JobStatus,
   JobsResponse,
 } from "@specula/shared-types";
-import { jobs, lenses } from "@/lib/seed/data";
-import { deriveLensSummaries } from "@/lib/seed/logic";
-import { scoredList } from "@/lib/jobs-scoring";
+import { bffFetch } from "@/lib/api/bff";
 
-// The full deduped pool, base-scored (lens-independent). M2: BFF → FastAPI.
-export function getJobsPool(): Job[] {
-  return jobs.slice();
+// The full deduped pool, already scored (server-side) against the "all" lens,
+// sorted by match. The client (JobsView) re-derives its own per-lens
+// filter/score/sort over this pool for the FLIP-animated list — see
+// `lib/jobs-scoring.ts`.
+export async function getJobsPool(): Promise<Job[]> {
+  const res = await bffFetch<JobsResponse>("/jobs?sort=match");
+  return res.jobs;
 }
 
-export function getJob(id: string): Job | null {
-  return jobs.find((j) => j.id === id) ?? null;
+export async function getJob(id: string): Promise<Job | null> {
+  try {
+    return await bffFetch<Job>(`/jobs/${encodeURIComponent(id)}`);
+  } catch {
+    return null;
+  }
 }
 
-// The lens-filtered, re-scored, sorted list + derived lens summaries.
-export function getJobs(lens: string, sort: JobSort): JobsResponse {
-  return {
-    jobs: scoredList(jobs, lens, sort),
-    lenses: deriveLensSummaries(lenses, jobs),
-    sort,
-  };
+// The lens-filtered, re-scored, sorted list + derived lens summaries — already
+// computed server-side. Do not re-derive with scoredList/deriveLensSummaries
+// here; that's the client's job (see lib/jobs-scoring.ts).
+export async function getJobs(
+  lens: string,
+  sort: JobSort,
+): Promise<JobsResponse> {
+  return bffFetch<JobsResponse>(
+    `/jobs?lens=${encodeURIComponent(lens)}&sort=${sort}`,
+  );
 }
 
 // The drawer's posting-state mutation (status / note / feedback / dismiss reason).
@@ -34,9 +43,7 @@ export type JobStatePatch = {
   feedback?: "positive" | "negative" | null;
 };
 
-// M2: goes through the BFF route → FastAPI PATCH /jobs/{id}/state. The route currently
-// echoes the patch for optimistic reconcile until the Frontend-wiring lane lands the
-// shared service-JWT `bffFetch`.
+// Client-side: persists through the BFF route → FastAPI PATCH /jobs/{id}/state.
 export async function patchJobState(
   id: string,
   patch: JobStatePatch,

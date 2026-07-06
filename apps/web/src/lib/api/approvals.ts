@@ -1,12 +1,10 @@
 import type { Approval } from "@specula/shared-types";
-import { approvals } from "@/lib/seed/data";
+import { bffFetch } from "@/lib/api/bff";
 
 export type ApprovalDecision = "approve" | "reject" | "snooze";
 
-// M2: BFF → FastAPI `GET /approvals`. The read swap to `await bffFetch(...)`
-// lands with the Frontend-wiring lane's shared service-JWT fetch.
-export function getApprovals(): Approval[] {
-  return approvals.slice();
+export async function getApprovals(): Promise<Approval[]> {
+  return bffFetch<Approval[]>("/approvals");
 }
 
 // Persist a queue decision via the BFF route (which proxies to FastAPI

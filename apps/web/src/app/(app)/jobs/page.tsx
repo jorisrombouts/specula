@@ -3,12 +3,11 @@ import { getJobsPool } from "@/lib/api/jobs";
 import { getLenses } from "@/lib/api/lenses";
 import { getCandidate } from "@/lib/api/candidate";
 
-export default function JobsPage() {
-  return (
-    <JobsView
-      pool={getJobsPool()}
-      lenses={getLenses()}
-      candidate={getCandidate()}
-    />
-  );
+export default async function JobsPage() {
+  const [pool, lenses, candidate] = await Promise.all([
+    getJobsPool(),
+    getLenses(),
+    getCandidate(),
+  ]);
+  return <JobsView pool={pool} lenses={lenses} candidate={candidate} />;
 }

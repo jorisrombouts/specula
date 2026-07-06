@@ -21,7 +21,7 @@ export default async function AppLayout({
     session?.user ??
     (bypass ? { name: "Dev (bypass)", email: "dev@local" } : null);
   if (!user) redirect("/signin");
-  const pool = getJobsPool();
+  const pool = await getJobsPool();
   const roles = pool.length;
   const isNew = pool.filter((j) => j.isNew).length;
   return (
