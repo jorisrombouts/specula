@@ -48,6 +48,16 @@ jobs:
           GRANT CONNECT ON DATABASE specula TO specula_app;
           GRANT CREATE, USAGE ON SCHEMA public TO specula_app;
           SQL
+      # Mirror `just db-bootstrap`: migrate then seed as specula_app, so read-model
+      # tests (lens counts, insights aggregates) have the demo pool to assert against
+      # — matching the local per-worktree DB setup. Without seeding, tests that read
+      # the demo user fail only in CI.
+      - name: Migrate + seed (as specula_app)
+        run: |
+          uv run alembic upgrade head
+          uv run python -m specula_api.seed
+        env:
+          DATABASE_URL: postgresql+asyncpg://specula_app:specula@localhost:5432/specula
       - run: uv run pytest
         env:
           DATABASE_URL: postgresql+asyncpg://specula_app:specula@localhost:5432/specula
