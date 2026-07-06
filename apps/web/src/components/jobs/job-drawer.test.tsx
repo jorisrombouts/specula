@@ -99,4 +99,71 @@ describe("JobDrawer", () => {
     // reveal mode shows the "scoring…" label initially (MatchMeter reveal)
     expect(screen.getByText(/scoring/i)).toBeInTheDocument();
   });
+
+  it("wires the feedback buttons to onPatchState", () => {
+    const onPatchState = vi.fn();
+    render(
+      <JobDrawer
+        job={job}
+        candidate={candidate}
+        onClose={() => {}}
+        mstyle="bars"
+        onPatchState={onPatchState}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Good match/ }));
+    expect(onPatchState).toHaveBeenCalledWith(job.id, { feedback: "positive" });
+    fireEvent.click(screen.getByRole("button", { name: /Not for me/ }));
+    expect(onPatchState).toHaveBeenCalledWith(job.id, { feedback: "negative" });
+  });
+
+  it("wires the lifecycle status steps to onPatchState", () => {
+    const onPatchState = vi.fn();
+    render(
+      <JobDrawer
+        job={job}
+        candidate={candidate}
+        onClose={() => {}}
+        mstyle="bars"
+        onPatchState={onPatchState}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Applied" }));
+    expect(onPatchState).toHaveBeenCalledWith(job.id, { status: "Applied" });
+  });
+
+  it("wires the note textarea to onPatchState on blur", () => {
+    const onPatchState = vi.fn();
+    render(
+      <JobDrawer
+        job={job}
+        candidate={candidate}
+        onClose={() => {}}
+        mstyle="bars"
+        onPatchState={onPatchState}
+      />,
+    );
+    const note = screen.getByPlaceholderText(/Add a note/);
+    fireEvent.change(note, { target: { value: "recruiter call Tue" } });
+    fireEvent.blur(note);
+    expect(onPatchState).toHaveBeenCalledWith(job.id, {
+      note: "recruiter call Tue",
+    });
+  });
+
+  it("does not PATCH the note on an unchanged (empty) blur", () => {
+    const onPatchState = vi.fn();
+    render(
+      <JobDrawer
+        job={job}
+        candidate={candidate}
+        onClose={() => {}}
+        mstyle="bars"
+        onPatchState={onPatchState}
+      />,
+    );
+    const note = screen.getByPlaceholderText(/Add a note/);
+    fireEvent.blur(note); // no edit — must not wipe a persisted note
+    expect(onPatchState).not.toHaveBeenCalled();
+  });
 });

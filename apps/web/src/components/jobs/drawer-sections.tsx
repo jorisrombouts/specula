@@ -101,13 +101,18 @@ export function SkillsSplit({
   );
 }
 
-// Display-only in M1b (inert). M2 wires status changes + note persistence.
+// M2: status steps set the lifecycle stage; the note persists on blur. Both flow up
+// via onStatus/onNote → PATCH /jobs/{id}/state.
 export function Lifecycle({
   status,
   note,
+  onStatus,
+  onNote,
 }: {
   status: JobStatus | null;
   note: string;
+  onStatus: (status: JobStatus) => void;
+  onNote: (note: string) => void;
 }) {
   const idx = status ? LIFECYCLE.indexOf(status) : -1;
   return (
@@ -117,9 +122,12 @@ export function Lifecycle({
           const done = n < idx;
           const active = n === idx;
           return (
-            <div
+            <button
               key={s}
-              className="relative flex flex-1 flex-col items-center gap-[7px]"
+              type="button"
+              aria-label={s}
+              onClick={() => onStatus(s)}
+              className="relative flex flex-1 cursor-pointer flex-col items-center gap-[7px] bg-transparent"
             >
               {n > 0 && (
                 <span
@@ -142,7 +150,7 @@ export function Lifecycle({
               >
                 {s}
               </span>
-            </div>
+            </button>
           );
         })}
       </div>
@@ -151,22 +159,45 @@ export function Lifecycle({
         rows={2}
         placeholder="Add a note (e.g. referred by Anna, recruiter call Tue)…"
         defaultValue={note}
-        readOnly
+        // Only persist a genuine edit — an empty/unchanged blur must not wipe a note.
+        onBlur={(e) => {
+          if (e.target.value !== note) onNote(e.target.value);
+        }}
       />
     </div>
   );
 }
 
-// Display-only in M1b (inert). M2 wires like/dismiss.
-export function Feedback() {
+// M2: like/dismiss feedback steers the recommender → PATCH /jobs/{id}/state.
+export function Feedback({
+  value,
+  onFeedback,
+}: {
+  value: "positive" | "negative" | null;
+  onFeedback: (feedback: "positive" | "negative") => void;
+}) {
+  const cls = (active: boolean) =>
+    `flex flex-1 cursor-pointer items-center justify-center gap-[8px] rounded-[9px] border py-[11px] text-[13px] font-medium ${
+      active
+        ? "border-ink bg-panel-2 text-ink"
+        : "border-rule-2 bg-card text-ink hover:border-ink"
+    }`;
   return (
     <div className="flex gap-[10px]">
-      <div className="flex flex-1 items-center justify-center gap-[8px] rounded-[9px] border border-rule-2 bg-card py-[11px] text-[13px] font-medium text-ink">
+      <button
+        type="button"
+        onClick={() => onFeedback("positive")}
+        className={cls(value === "positive")}
+      >
         ↑ Good match
-      </div>
-      <div className="flex flex-1 items-center justify-center gap-[8px] rounded-[9px] border border-rule-2 bg-card py-[11px] text-[13px] font-medium text-ink">
+      </button>
+      <button
+        type="button"
+        onClick={() => onFeedback("negative")}
+        className={cls(value === "negative")}
+      >
         ↓ Not for me
-      </div>
+      </button>
     </div>
   );
 }
