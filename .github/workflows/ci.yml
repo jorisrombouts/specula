@@ -34,9 +34,23 @@ jobs:
       - run: uv run ruff check
       - run: uv run ruff format --check
       - run: uv run mypy .
+      # Mirror db/init.sql: pre-create the (untrusted) vector extension and a
+      # non-superuser app role that owns the schema, so RLS/FORCE is actually
+      # enforced under pytest (the superuser bootstrap role would bypass every
+      # policy and make the tenancy tests hollow). Connect pytest as specula_app.
+      - name: Provision non-superuser app role + extensions
+        run: |
+          PGPASSWORD=specula psql -h localhost -p 5432 -U specula -d specula -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE EXTENSION IF NOT EXISTS vector;
+          CREATE EXTENSION IF NOT EXISTS pg_trgm;
+          CREATE EXTENSION IF NOT EXISTS citext;
+          CREATE ROLE specula_app LOGIN PASSWORD 'specula' NOSUPERUSER NOBYPASSRLS;
+          GRANT CONNECT ON DATABASE specula TO specula_app;
+          GRANT CREATE, USAGE ON SCHEMA public TO specula_app;
+          SQL
       - run: uv run pytest
         env:
-          DATABASE_URL: postgresql+asyncpg://specula:specula@localhost:5432/specula
+          DATABASE_URL: postgresql+asyncpg://specula_app:specula@localhost:5432/specula
 
   web:
     runs-on: ubuntu-latest

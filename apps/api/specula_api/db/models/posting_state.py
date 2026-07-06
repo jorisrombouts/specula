@@ -16,6 +16,8 @@ class PostingState(TimestampMixin, Base):
     posting_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("postings.id", ondelete="CASCADE"), primary_key=True
     )
+    # SERVICE OBLIGATION: `user_id` must equal the owning posting's `user_id` (carried
+    # for the RLS policy; not DB-enforced). Set it from the posting, never the client.
     user_id: Mapped[uuid.UUID] = user_fk()
     status: Mapped[str | None] = mapped_column(Text, nullable=True)  # Saved|Applied|...|Dismissed
     note: Mapped[str | None] = mapped_column(Text, nullable=True)

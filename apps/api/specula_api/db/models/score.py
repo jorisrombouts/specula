@@ -18,6 +18,10 @@ class Score(Base):
     posting_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("postings.id", ondelete="CASCADE"), primary_key=True
     )
+    # SERVICE OBLIGATION: `user_id` must equal the owning posting's `user_id`. It's
+    # carried here (rather than joined) so the RLS policy can scope by it, but no DB
+    # constraint enforces the match — always set it from the posting you're scoring,
+    # never from client input.
     user_id: Mapped[uuid.UUID] = user_fk()
     factor_role: Mapped[int] = mapped_column(Integer)
     factor_skill: Mapped[int] = mapped_column(Integer)
