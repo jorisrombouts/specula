@@ -1,9 +1,16 @@
 import type { Approval } from "@specula/shared-types";
+import type { ApprovalDecision } from "@/lib/api/approvals";
 import { Chip } from "@/components/atoms/chip";
 import { Tag } from "@/components/atoms/tag";
 import { Button } from "@/components/atoms/button";
 
-export function ApprovalCard({ approval: c }: { approval: Approval }) {
+export function ApprovalCard({
+  approval: c,
+  onDecide,
+}: {
+  approval: Approval;
+  onDecide?: (decision: ApprovalDecision) => void;
+}) {
   return (
     <div
       data-appr={c.id}
@@ -38,11 +45,22 @@ export function ApprovalCard({ approval: c }: { approval: Approval }) {
         ⌕ found via &quot;{c.query}&quot;
       </div>
       <div className="mt-[2px] flex gap-[8px]">
-        <Button variant="accent" className="flex-1 justify-center">
+        <Button
+          variant="accent"
+          className="flex-1 justify-center"
+          onClick={() => onDecide?.("approve")}
+        >
           ✓ Approve
         </Button>
-        <Button className="flex-1 justify-center">✕ Reject</Button>
-        <Button title="Snooze">☾</Button>
+        <Button
+          className="flex-1 justify-center"
+          onClick={() => onDecide?.("reject")}
+        >
+          ✕ Reject
+        </Button>
+        <Button title="Snooze" onClick={() => onDecide?.("snooze")}>
+          ☾
+        </Button>
       </div>
     </div>
   );
