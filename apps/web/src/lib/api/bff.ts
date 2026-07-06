@@ -1,5 +1,5 @@
 import { SignJWT } from "jose";
-import { auth } from "@/auth";
+import { getSession } from "@/auth";
 
 type Identity = { sub: string; email: string; name: string };
 
@@ -15,7 +15,7 @@ async function resolveIdentity(): Promise<Identity | null> {
   if (bypass) {
     return { sub: "demo-user", email: "demo@specula.app", name: "Demo User" };
   }
-  const session = await auth();
+  const session = await getSession();
   if (!session?.user?.id) return null;
   return {
     sub: session.user.id,
