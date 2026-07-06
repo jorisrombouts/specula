@@ -13,8 +13,8 @@ describe("lib/api read-view data-access", () => {
     expect(a.find((x) => x.id === "a5")?.unverified).toBe(true);
   });
 
-  it("getCompanies returns the 10-company registry", () => {
-    const c = getCompanies();
+  it("getCompanies returns the 10-company registry", async () => {
+    const c = await getCompanies();
     expect(c).toHaveLength(10);
     expect(c.find((x) => x.name === "Sereact")?.conf).toBe(64);
   });
@@ -28,7 +28,7 @@ describe("lib/api read-view data-access", () => {
 
   it("the refactored routes still return the same shapes", async () => {
     expect(await approvalsRoute().json()).toHaveLength(6);
-    expect(await companiesRoute().json()).toHaveLength(10);
+    expect(await (await companiesRoute()).json()).toHaveLength(10);
     expect((await insightsRoute().json()).totalAnalysed).toBe(312);
   });
 });
