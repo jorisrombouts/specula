@@ -1,8 +1,17 @@
 from fastapi import APIRouter
 
-from specula_api.routers import candidate, company, insights, jobs, lenses, targeting
+from specula_api.routers import (
+    approval,
+    candidate,
+    company,
+    insights,
+    jobs,
+    lenses,
+    targeting,
+)
 
 api_router = APIRouter(prefix="/api/v1")
+api_router.include_router(approval.router)
 api_router.include_router(candidate.router)
 api_router.include_router(company.router)
 api_router.include_router(insights.router)

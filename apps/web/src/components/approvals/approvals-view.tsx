@@ -1,7 +1,30 @@
+"use client";
+
+import { useState } from "react";
 import type { Approval } from "@specula/shared-types";
 import { ApprovalCard } from "@/components/approvals/approval-card";
+import {
+  postApprovalDecision,
+  type ApprovalDecision,
+} from "@/lib/api/approvals";
 
 export function ApprovalsView({ approvals }: { approvals: Approval[] }) {
+  const [queue, setQueue] = useState(approvals);
+  const [approved, setApproved] = useState(0);
+
+  // Optimistically drop the card; the "N approved" header stays DERIVED from
+  // decisions made. Roll back if the decision fails to persist.
+  async function decide(approval: Approval, decision: ApprovalDecision) {
+    setQueue((q) => q.filter((a) => a.id !== approval.id));
+    if (decision === "approve") setApproved((n) => n + 1);
+    try {
+      await postApprovalDecision(approval.id, decision);
+    } catch {
+      setQueue((q) => [approval, ...q]);
+      if (decision === "approve") setApproved((n) => n - 1);
+    }
+  }
+
   return (
     <section
       data-screen-label="approvals"
@@ -21,27 +44,30 @@ export function ApprovalsView({ approvals }: { approvals: Approval[] }) {
         </div>
         <div className="flex items-center gap-[14px] font-mono text-[11.5px] text-ink-2">
           <div>
-            <b className="text-[15px] font-semibold text-ink">
-              {approvals.length}
-            </b>{" "}
+            <b className="text-[15px] font-semibold text-ink">{queue.length}</b>{" "}
             pending
           </div>
           <span className="h-[26px] w-px bg-rule" />
           <div>
-            <b className="text-[15px] font-semibold text-ink">0</b> approved
+            <b className="text-[15px] font-semibold text-ink">{approved}</b>{" "}
+            approved
           </div>
         </div>
       </header>
 
-      {approvals.length === 0 ? (
+      {queue.length === 0 ? (
         <div className="px-[20px] py-[80px] text-center text-ink-2">
           <div className="mb-[14px] text-[34px] opacity-40">✓</div>
           Queue clear. Next discovery run is scheduled for Monday.
         </div>
       ) : (
         <div className="mt-[20px] grid grid-cols-2 gap-[14px]">
-          {approvals.map((c) => (
-            <ApprovalCard key={c.id} approval={c} />
+          {queue.map((c) => (
+            <ApprovalCard
+              key={c.id}
+              approval={c}
+              onDecide={(decision) => decide(c, decision)}
+            />
           ))}
         </div>
       )}
