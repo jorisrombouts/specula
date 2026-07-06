@@ -1,10 +1,17 @@
-import { describe, it, expect, afterEach } from "vitest";
-import { render, screen, fireEvent, cleanup } from "@testing-library/react";
+import { describe, it, expect, afterEach, vi } from "vitest";
+import {
+  render,
+  screen,
+  fireEvent,
+  cleanup,
+  waitFor,
+} from "@testing-library/react";
 import { CompaniesView } from "@/components/companies/companies-view";
-import { getCompanies } from "@/lib/api/companies";
+import type { CompanyRow } from "@/lib/api/companies";
+import { companies } from "@/lib/seed/data";
 
 afterEach(cleanup);
-const companies = getCompanies();
+afterEach(() => vi.restoreAllMocks());
 
 describe("CompaniesView", () => {
   it("renders DERIVED tracked count (10) and open-roles sum (67)", () => {
@@ -38,10 +45,31 @@ describe("CompaniesView", () => {
     expect(screen.getByText("3 of 10")).toBeInTheDocument();
   });
 
-  it("renders the comp-est chip and an inert tracking toggle per row", () => {
+  it("renders the comp-est chip and a tracking toggle per row", () => {
     const { container } = render(<CompaniesView companies={companies} />);
     // Toggle atom renders role="switch"; one per row
     expect(container.querySelectorAll('[role="switch"]')).toHaveLength(10);
     expect(screen.getAllByText("€€€").length).toBeGreaterThan(0);
+  });
+
+  it("PATCHes /api/companies/{id} when a row's tracking toggle is flipped", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(null, { status: 200 }));
+    const rows: CompanyRow[] = [
+      { ...companies[0], id: "co-1", tracking: true },
+    ];
+    render(<CompaniesView companies={rows} />);
+
+    const toggle = screen.getByRole("switch");
+    expect(toggle).toHaveAttribute("aria-checked", "true");
+    fireEvent.click(toggle);
+
+    expect(toggle).toHaveAttribute("aria-checked", "false"); // optimistic flip
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/api/companies/co-1");
+    expect(init?.method).toBe("PATCH");
+    expect(JSON.parse(init?.body as string)).toEqual({ tracking: false });
   });
 });

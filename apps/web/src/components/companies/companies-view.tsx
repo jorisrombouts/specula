@@ -1,12 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import type { Company } from "@specula/shared-types";
 import { Chip } from "@/components/atoms/chip";
 import { Toggle } from "@/components/atoms/toggle";
+import { setCompanyTracking, type CompanyRow } from "@/lib/api/companies";
 
-export function CompaniesView({ companies }: { companies: Company[] }) {
+export function CompaniesView({ companies }: { companies: CompanyRow[] }) {
   const [q, setQ] = useState("");
+  const [tracking, setTracking] = useState<Record<string, boolean>>({});
   const query = q.toLowerCase();
   const rows = companies.filter(
     (c) =>
@@ -82,6 +83,16 @@ export function CompaniesView({ companies }: { companies: Company[] }) {
         <tbody>
           {rows.map((c) => {
             const low = c.conf < 80;
+            const rowKey = c.id ?? c.name;
+            const on = tracking[rowKey] ?? c.tracking ?? true;
+            const toggle = (next: boolean) => {
+              setTracking((t) => ({ ...t, [rowKey]: next }));
+              if (c.id) {
+                setCompanyTracking(c.id, next).catch(() =>
+                  setTracking((t) => ({ ...t, [rowKey]: !next })),
+                );
+              }
+            };
             return (
               <tr key={c.name} className="transition-colors hover:bg-panel">
                 <td className="border-b border-rule px-[14px] py-[15px] align-middle text-[13.5px]">
@@ -125,7 +136,7 @@ export function CompaniesView({ companies }: { companies: Company[] }) {
                   <Chip strong>{c.comp}</Chip>
                 </td>
                 <td className="border-b border-rule px-[14px] py-[15px] align-middle text-[13.5px]">
-                  <Toggle on onChange={() => {}} />
+                  <Toggle on={on} onChange={toggle} />
                 </td>
               </tr>
             );
