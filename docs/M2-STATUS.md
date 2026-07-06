@@ -18,8 +18,8 @@ _Last updated: 2026-07-06 — foundation merged; fan-out infra ready; lanes laun
 | **candidate** | ✅ merged | `m2-candidate` | `specula_wt_candidate` | `specs/m2-candidate-brief.md` | — | Clean clone; FE deferred to wiring lane. `Candidate.name` lives on `users` — wiring lane composes it |
 | **tweaks** | ⬜ | `m2-tweaks` | `specula_wt_tweaks` | `specs/m2-tweaks-brief.md` | — | Small; localStorage→server |
 | **companies** | ⬜ | `m2-companies` | `specula_wt_companies` | `specs/m2-companies-brief.md` | — | tracking toggle |
-| **lenses** | ⬜ | `m2-lenses` | `specula_wt_lenses` | `specs/m2-lenses-brief.md` | `lens_filter`* | Derived counts |
-| **jobs-state** | ⬜ | `m2-jobs-state` | `specula_wt_jobs_state` | `specs/m2-jobs-state-brief.md` | `lens_filter`* | Meatiest lane |
+| **lenses** | ✅ merged | `m2-lenses` | `specula_wt_lenses` | `specs/m2-lenses-brief.md` | — | **Owns `services/lens_filter.py`** now on `main`; derived counts clean |
+| **jobs-state** | 🟡 | `m2-jobs-state` | `specula_wt_jobs_state` | `specs/m2-jobs-state-brief.md` | ⚠️ `lens_filter` exists on main | On merge: DROP any duplicate `lens_filter.py` it built; use main's `lens_where(lens)->list[ColumnElement]` + `new_predicate()`. Rebase on main first |
 | **insights** | ⬜ | `m2-insights` | `specula_wt_insights` | `specs/m2-insights-brief.md` | — | Exclude low-confidence |
 | **approvals** | ⬜ | `m2-approvals` | `specula_wt_approvals` | `specs/m2-approvals-brief.md` | — | approve → add company |
 | **frontend-wiring** | ⬜ | (last, serial) | — | — | all backend lanes | Shared bffFetch + service-JWT minter; runs after the API contract is frozen |
@@ -39,3 +39,4 @@ Foundation ✅ → independent config lanes (**candidate, tweaks, companies**) �
 _(append one line per integration event)_
 - 2026-07-06 — board created; M2a foundation merged (`de372e5`); 7 worktrees + DBs live.
 - 2026-07-06 — **candidate** merged (`1bbcc8d`). Clean clone of targeting; 30 passed / mypy / ruff / format green; cross-tenant verified. FE correctly deferred. Note: `Candidate.name` (TS) has no `candidate_profiles` column — it's on `users`; the frontend-wiring lane composes name from user + profile.
+- 2026-07-06 — **lenses** merged (`a89cb65`, resolved trivial `routers/__init__.py` import conflict). 35 passed on main / mypy / ruff green. **`services/lens_filter.py` now lives on `main`** — interface: `lens_where(lens) -> list[ColumnElement[bool]]` (modes/foreign_hq/scope; default→[]) + `new_predicate()`. ⚠️ jobs-state built independently and may carry its own copy → at its merge, keep main's version, drop the duplicate, and make jobs' pool query use it.
