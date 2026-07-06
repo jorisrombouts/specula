@@ -55,6 +55,35 @@ up:
 down:
     docker compose down
 
+# Apply all pending DB migrations (as the specula_app role via DATABASE_URL)
+migrate:
+    cd apps/api && uv run alembic upgrade head
+
+# Roll back migrations (default one step): just migrate-down  |  just migrate-down base
+migrate-down rev="-1":
+    cd apps/api && uv run alembic downgrade {{rev}}
+
+# Create a new (empty) migration to hand-edit: just migration "add widget table"
+migration name:
+    cd apps/api && uv run alembic revision -m "{{name}}"
+
+# Seed the demo user + representative data (idempotent)
+seed:
+    cd apps/api && uv run python -m specula_api.seed
+
+# Create + prepare a database on the shared container. Extensions + the specula_app
+# grant need the superuser; migrate/seed then run as the non-superuser specula_app.
+db-create db:
+    docker compose exec -T postgres psql -U specula -d specula -c "CREATE DATABASE {{db}} OWNER specula" || true
+    docker compose exec -T postgres psql -U specula -d {{db}} -c "CREATE EXTENSION IF NOT EXISTS vector; CREATE EXTENSION IF NOT EXISTS pg_trgm; CREATE EXTENSION IF NOT EXISTS citext; GRANT CREATE, USAGE ON SCHEMA public TO specula_app;"
+
+# Bring a per-worktree DB fully online: create + migrate + seed. e.g.:
+#   just db-bootstrap specula_wt_lenses
+db-bootstrap db:
+    just db-create {{db}}
+    DATABASE_URL="postgresql+asyncpg://specula_app:specula@localhost:55432/{{db}}" just migrate
+    DATABASE_URL="postgresql+asyncpg://specula_app:specula@localhost:55432/{{db}}" just seed
+
 # Regenerate the committed Linux pixel baselines in the pinned Playwright image
 # (matches CI's Chromium + font stack). The visual config builds and serves a
 # production `next start` inside the container (no dev overlay, no on-demand
