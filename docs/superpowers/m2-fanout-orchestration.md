@@ -37,27 +37,53 @@ done
 
 ## 2. Launch one `claude-personal` per lane in tmux
 
-**Use `claude-personal`, not `claude`.** Each window opens in its worktree and boots a
-fresh agent sitting at its prompt.
+**Use `claude-personal`, not `claude`.** Each window opens in its worktree and runs a
+fresh agent.
+
+> **Why the obvious one-liner fails.** `claude-personal` is a shell alias/function (in
+> your `~/.zshrc`), not a binary on `PATH`. Passing it as the command —
+> `tmux new-window … 'claude-personal'` — makes tmux run it via a bare `/bin/sh -c`
+> that never loads your zsh config, so it's "command not found", the window's process
+> exits, and the window (or whole session) dies instantly. **Fix:** create each window
+> with a normal interactive shell (no command argument), then `send-keys` the command
+> into it — that runs inside your zsh where the alias exists.
 
 ```bash
-tmux new-session -d -s specula -n lenses     -c .worktrees/m2-lenses     'claude-personal'
-tmux new-window  -t specula   -n candidate   -c .worktrees/m2-candidate   'claude-personal'
-tmux new-window  -t specula   -n companies   -c .worktrees/m2-companies   'claude-personal'
-tmux new-window  -t specula   -n jobs-state  -c .worktrees/m2-jobs-state  'claude-personal'
-tmux new-window  -t specula   -n insights    -c .worktrees/m2-insights    'claude-personal'
-tmux new-window  -t specula   -n approvals   -c .worktrees/m2-approvals   'claude-personal'
-tmux new-window  -t specula   -n tweaks      -c .worktrees/m2-tweaks      'claude-personal'
+cd /Users/jorisrombouts/Projects/Personal/specula
+
+# First window CREATES the session (‑d = detached/background). Note: no command arg.
+tmux new-session -d -s specula -n lenses -c .worktrees/m2-lenses
+tmux send-keys -t specula:lenses 'claude-personal' Enter
+
+# Each additional lane: add a window, then type the command into it.
+for lane in candidate companies jobs-state insights approvals tweaks; do
+  tmux new-window -t specula -n "$lane" -c ".worktrees/m2-$lane"
+  tmux send-keys  -t "specula:$lane" 'claude-personal' Enter
+done
+
+# ATTACH — this is what actually puts you *inside* tmux. Until you attach, the
+# session runs in the background and the prefix key does nothing.
 tmux attach -t specula
 ```
 
-Navigation: `Ctrl-b <number>` jump to window · `Ctrl-b n`/`p` next/prev · `Ctrl-b d`
-detach (sessions keep running — reattach with `tmux attach -t specula`) · `Ctrl-b w`
-list windows. For side-by-side in Ghostty use native splits, or make tmux panes with
-`Ctrl-b %` / `Ctrl-b "`.
+**You must `tmux attach`.** Creating with `-d` is silent and invisible on purpose. You
+are only "in tmux" once you've attached — confirmed by the **status bar at the bottom**
+of the window (session name + window list). No status bar = not in tmux = the prefix
+key is inert.
+
+Navigation (default prefix is **`Ctrl-b`** — press and *release* it, then the key):
+`Ctrl-b <number>` jump to window · `Ctrl-b n`/`p` next/prev · `Ctrl-b w` list windows ·
+`Ctrl-b d` detach (session keeps running — reattach with `tmux attach -t specula`).
+For side-by-side, use Ghostty's native splits or tmux panes (`Ctrl-b %` / `Ctrl-b "`).
+
+> If `Ctrl-b` seems dead: (1) confirm you're attached (status bar visible) — `tmux ls`
+> lists sessions, `tmux list-clients` shows whether anyone is attached; (2) a custom
+> `~/.tmux.conf` may remap the prefix — check with `tmux show-options -g prefix`
+> (default is `C-b`).
 
 **Start small.** You don't have to launch all seven at once — try 2–3 first (e.g.
-`candidate`, `targeting`-is-done, `companies`) to get the rhythm, then add more.
+`candidate`, `companies`, `tweaks`) to get the rhythm, then add more. To add one later,
+just repeat the two-line `new-window` + `send-keys` pair for that lane.
 
 ## 3. Drive each lane
 
