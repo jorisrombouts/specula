@@ -64,8 +64,28 @@ jobs:
 
   web:
     runs-on: ubuntu-latest
+    # The E2E + visual suites now drive the API-backed app: Playwright starts a
+    # uvicorn (see playwright*.config.ts) that serves the seeded demo data. So this
+    # job needs Postgres + the api toolchain, seeded, before those steps run.
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: specula
+          POSTGRES_PASSWORD: specula
+          POSTGRES_DB: specula
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U specula -d specula"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     env:
       AUTH_SECRET: ci-dummy-secret-not-for-production
+      # The harness's uvicorn connects here (as specula_app, on the CI Postgres);
+      # Playwright reads this at config load and passes it to the uvicorn it starts.
+      E2E_DATABASE_URL: postgresql+asyncpg://specula_app:specula@localhost:5432/specula
     defaults:
       run:
         working-directory: apps/web
@@ -85,11 +105,34 @@ jobs:
       - run: pnpm format:check
       - run: pnpm build
       - run: pnpm test
+      # API toolchain for the uvicorn the Playwright suites start.
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --frozen
+        working-directory: apps/api
+      # Mirror db/init.sql + just db-bootstrap: non-superuser app role + extensions,
+      # then migrate + seed as specula_app so the API serves the seeded demo dataset.
+      - name: Provision app role + extensions, migrate + seed
+        working-directory: apps/api
+        run: |
+          PGPASSWORD=specula psql -h localhost -p 5432 -U specula -d specula -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE EXTENSION IF NOT EXISTS vector;
+          CREATE EXTENSION IF NOT EXISTS pg_trgm;
+          CREATE EXTENSION IF NOT EXISTS citext;
+          CREATE ROLE specula_app LOGIN PASSWORD 'specula' NOSUPERUSER NOBYPASSRLS;
+          GRANT CONNECT ON DATABASE specula TO specula_app;
+          GRANT CREATE, USAGE ON SCHEMA public TO specula_app;
+          SQL
+          uv run alembic upgrade head
+          uv run python -m specula_api.seed
+        env:
+          DATABASE_URL: postgresql+asyncpg://specula_app:specula@localhost:5432/specula
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm test:e2e
-      # Pixel regression against a production build (own config, own server). The
-      # committed Linux baselines are generated in the pinned Playwright image
-      # (`just visual-update`), which matches this runner's Chromium + font stack.
+      # Pixel regression against the API-backed production build (own config, own
+      # servers — a uvicorn + a next start). Committed Linux baselines are generated
+      # by `just visual-update` (same Chromium + font stack + seeded data).
       - run: pnpm exec playwright test --config playwright.visual.config.ts
       - if: failure()
         uses: actions/upload-artifact@v4

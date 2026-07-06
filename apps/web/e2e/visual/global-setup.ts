@@ -5,6 +5,7 @@ import { encode } from "next-auth/jwt";
 import {
   E2E_AUTH_SECRET,
   E2E_USER,
+  E2E_USER_SUB,
   SESSION_COOKIE,
   STORAGE_STATE,
   VISUAL_PORT,
@@ -20,7 +21,10 @@ export default async function globalSetup(): Promise<void> {
     token: {
       name: E2E_USER.name,
       email: E2E_USER.email,
-      sub: "e2e-visual-user",
+      // sub = the seeded demo user's google_sub, so bffFetch's service JWT resolves to
+      // the demo user and the API returns the seeded dataset. (name/email stay the M1
+      // "Dev (bypass)" values so the rendered sidebar matches the existing baselines.)
+      sub: E2E_USER_SUB,
     },
     secret: E2E_AUTH_SECRET,
     salt: SESSION_COOKIE,
