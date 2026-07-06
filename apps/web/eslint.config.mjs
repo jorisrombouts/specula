@@ -13,8 +13,13 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
-    // Second dist dir for the E2E authed dev server (see next.config.ts).
-    ".next-authed/**",
+    // All Next dist-dir variants — the E2E authed server uses `.next-authed`, and
+    // ad-hoc runs use their own `NEXT_DIST_DIR` (`.next-fw`, `.next-probe`, …). Ignore
+    // every `.next*` so a stray build dir can't fail lint.
+    ".next*/**",
+    // Playwright HTML report + results are generated build artifacts, not source.
+    "playwright-report/**",
+    "test-results/**",
   ]),
   {
     // Playwright E2E specs/fixtures aren't React — the fixture `use` callback
