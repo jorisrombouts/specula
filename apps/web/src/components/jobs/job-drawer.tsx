@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef } from "react";
-import type { Job, Candidate } from "@specula/shared-types";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import type { Job, Candidate, JobStatus } from "@specula/shared-types";
 import type { MorphRects } from "@/components/jobs/morph";
 import type { Mstyle } from "@/lib/tweaks-init";
+import { patchJobState, type JobStatePatch } from "@/lib/api/jobs";
 import { morphScale } from "@/lib/flip";
 import { usePrefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
 import { MatchMeter } from "@/components/atoms/match-meter";
@@ -24,14 +25,38 @@ export function JobDrawer({
   onClose,
   morphFrom = null,
   mstyle,
+  onPatchState = patchJobState,
 }: {
   job: Job;
   candidate: Candidate;
   onClose: () => void;
   morphFrom?: MorphRects | null;
   mstyle: Mstyle;
+  onPatchState?: (id: string, patch: JobStatePatch) => void | Promise<unknown>;
 }) {
   const reduce = usePrefersReducedMotion();
+  // Optimistic local state for the posting-state controls; each edit fires a PATCH.
+  const [status, setStatus] = useState<JobStatus | null>(job.status);
+  const [feedback, setFeedback] = useState<"positive" | "negative" | null>(
+    null,
+  );
+  // Fire the PATCH; if it rejects (e.g. network error), revert the optimistic value
+  // so the UI never claims a state that didn't persist.
+  const patch = (p: JobStatePatch, revert?: () => void) => {
+    const result = onPatchState(job.id, p);
+    if (result instanceof Promise) result.catch(() => revert?.());
+  };
+  const handleStatus = (s: JobStatus) => {
+    const prev = status;
+    setStatus(s);
+    patch({ status: s }, () => setStatus(prev));
+  };
+  const handleFeedback = (f: "positive" | "negative") => {
+    const prev = feedback;
+    setFeedback(f);
+    patch({ feedback: f }, () => setFeedback(prev));
+  };
+  const handleNote = (note: string) => patch({ note });
   const panelRef = useRef<HTMLElement>(null);
   const scrimRef = useRef<HTMLDivElement>(null);
   const titleRef = useRef<HTMLHeadingElement>(null);
@@ -237,15 +262,15 @@ export function JobDrawer({
 
           <Section head="application status">
             <Lifecycle
-              status={
-                job.status && job.status !== "Dismissed" ? job.status : null
-              }
+              status={status && status !== "Dismissed" ? status : null}
               note=""
+              onStatus={handleStatus}
+              onNote={handleNote}
             />
           </Section>
 
           <Section head="feedback" note="steers your recommender">
-            <Feedback />
+            <Feedback value={feedback} onFeedback={handleFeedback} />
           </Section>
 
           <div className="flex gap-[10px]">

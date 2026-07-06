@@ -46,14 +46,21 @@ describe("drawer sections", () => {
   });
 
   it("Lifecycle marks the current status step", () => {
-    render(<Lifecycle status="Applied" note="" />);
+    render(
+      <Lifecycle
+        status="Applied"
+        note=""
+        onStatus={() => {}}
+        onNote={() => {}}
+      />,
+    );
     expect(screen.getByText("Applied")).toBeInTheDocument();
     // Saved (done, n<idx) + Applied (active, n===idx) each carry a check
     expect(screen.getAllByText("✓").length).toBe(2);
   });
 
-  it("Feedback renders the two default (inert) controls", () => {
-    render(<Feedback />);
+  it("Feedback renders the two controls", () => {
+    render(<Feedback value={null} onFeedback={() => {}} />);
     expect(screen.getByText("↑ Good match")).toBeInTheDocument();
     expect(screen.getByText("↓ Not for me")).toBeInTheDocument();
   });
