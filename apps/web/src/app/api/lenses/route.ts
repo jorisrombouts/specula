@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getLenses } from "@/lib/api/lenses";
 
-export function GET(): NextResponse {
-  return NextResponse.json(getLenses());
+export async function GET(): Promise<NextResponse> {
+  return NextResponse.json(await getLenses());
 }

@@ -5,6 +5,7 @@ import type { Candidate, SkillsGap } from "@specula/shared-types";
 import { TagEditor } from "@/components/atoms/tag-editor";
 import { Button } from "@/components/atoms/button";
 import { Field } from "@/components/config/field";
+import { saveCandidate } from "@/lib/api/candidate";
 
 const INPUT =
   "w-full rounded-[9px] border border-rule-2 bg-card px-[13px] py-[11px] font-body text-[13.5px] text-ink focus:border-ink focus:outline-none";
@@ -18,7 +19,36 @@ export function CandidateView({
   candidate: Candidate;
   skillsGap: SkillsGap[];
 }) {
+  const [title, setTitle] = useState(c.title);
+  const [location, setLocation] = useState(c.location);
+  const [workMode, setWorkMode] = useState(c.workMode);
+  const [visa, setVisa] = useState(c.visa);
+  const [years, setYears] = useState(c.years);
   const [skills, setSkills] = useState(c.skills);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  const handleSave = async () => {
+    setSaving(true);
+    setSaved(false);
+    try {
+      await saveCandidate({
+        title,
+        location,
+        workMode,
+        visa,
+        years,
+        skills,
+        education: c.education,
+        languages: c.languages,
+        projects: c.projects,
+        experience: c.experience,
+      });
+      setSaved(true);
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <section
@@ -44,20 +74,42 @@ export function CandidateView({
       <div className="mt-[24px] grid grid-cols-[1fr_320px] items-start gap-[26px]">
         <div>
           <Field label="Headline">
-            <input className={INPUT} defaultValue={c.title} />
+            <input
+              className={INPUT}
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+            />
           </Field>
           <div className="grid grid-cols-2 gap-[16px]">
             <Field label="Location">
-              <input className={INPUT} defaultValue={c.location} />
+              <input
+                className={INPUT}
+                value={location}
+                onChange={(e) => setLocation(e.target.value)}
+              />
             </Field>
             <Field label="Work mode">
-              <input className={INPUT} defaultValue={c.workMode} />
+              <input
+                className={INPUT}
+                value={workMode}
+                onChange={(e) => setWorkMode(e.target.value)}
+              />
             </Field>
             <Field label="Years experience">
-              <input className={INPUT} defaultValue={`${c.years} years`} />
+              <input
+                className={INPUT}
+                type="number"
+                min={0}
+                value={years}
+                onChange={(e) => setYears(Number(e.target.value))}
+              />
             </Field>
             <Field label="Visa">
-              <input className={INPUT} defaultValue={c.visa} />
+              <input
+                className={INPUT}
+                value={visa}
+                onChange={(e) => setVisa(e.target.value)}
+              />
             </Field>
           </div>
           <Field label="Skills · matched against required_skills">
@@ -97,6 +149,12 @@ export function CandidateView({
                 ))}
               </div>
             </Field>
+          </div>
+          <div className="mt-[18px] flex items-center gap-[12px]">
+            <Button variant="pri" onClick={handleSave} disabled={saving}>
+              {saving ? "Saving…" : "Save profile"}
+            </Button>
+            {saved && <span className="text-[12.5px] text-ink-2">Saved.</span>}
           </div>
         </div>
 
