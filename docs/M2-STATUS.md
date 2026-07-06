@@ -15,7 +15,7 @@ _Last updated: 2026-07-06 — foundation merged; fan-out infra ready; lanes laun
 | Lane | Status | Branch | DB | Brief | Depends on | Notes |
 |---|---|---|---|---|---|---|
 | **targeting** | ✅ merged | (foundation) | — | — | — | Built in M2a as the copy-me template |
-| **candidate** | ⬜ | `m2-candidate` | `specula_wt_candidate` | `specs/m2-candidate-brief.md` | — | Closest clone of targeting (1:1) |
+| **candidate** | ✅ merged | `m2-candidate` | `specula_wt_candidate` | `specs/m2-candidate-brief.md` | — | Clean clone; FE deferred to wiring lane. `Candidate.name` lives on `users` — wiring lane composes it |
 | **tweaks** | ⬜ | `m2-tweaks` | `specula_wt_tweaks` | `specs/m2-tweaks-brief.md` | — | Small; localStorage→server |
 | **companies** | ⬜ | `m2-companies` | `specula_wt_companies` | `specs/m2-companies-brief.md` | — | tracking toggle |
 | **lenses** | ⬜ | `m2-lenses` | `specula_wt_lenses` | `specs/m2-lenses-brief.md` | `lens_filter`* | Derived counts |
@@ -38,3 +38,4 @@ Foundation ✅ → independent config lanes (**candidate, tweaks, companies**) �
 
 _(append one line per integration event)_
 - 2026-07-06 — board created; M2a foundation merged (`de372e5`); 7 worktrees + DBs live.
+- 2026-07-06 — **candidate** merged (`1bbcc8d`). Clean clone of targeting; 30 passed / mypy / ruff / format green; cross-tenant verified. FE correctly deferred. Note: `Candidate.name` (TS) has no `candidate_profiles` column — it's on `users`; the frontend-wiring lane composes name from user + profile.
