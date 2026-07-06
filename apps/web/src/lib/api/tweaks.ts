@@ -1,12 +1,13 @@
-import { type Tweaks, TWEAK_DEFAULTS } from "@/lib/tweaks-init";
+import { type Tweaks } from "@/lib/tweaks-init";
+import { bffFetch } from "@/lib/api/bff";
 
-// M2: BFF → FastAPI. The shared service-JWT `bffFetch` lands with the
-// frontend-wiring lane; until then GET returns the defaults and PUT echoes the
-// validated body. Swap both bodies for `await bffFetch("/tweaks", ...)`.
-export function getTweaks(): Tweaks {
-  return TWEAK_DEFAULTS;
+export async function getTweaks(): Promise<Tweaks> {
+  return bffFetch<Tweaks>("/tweaks");
 }
 
-export function putTweaks(tweaks: Tweaks): Tweaks {
-  return tweaks;
+export async function putTweaks(tweaks: Tweaks): Promise<Tweaks> {
+  return bffFetch<Tweaks>("/tweaks", {
+    method: "PUT",
+    body: JSON.stringify(tweaks),
+  });
 }

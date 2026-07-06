@@ -8,18 +8,24 @@ import {
   act,
 } from "@testing-library/react";
 import { JobsView } from "@/components/jobs/jobs-view";
-import { getJobsPool } from "@/lib/api/jobs";
-import { getLenses } from "@/lib/api/lenses";
-import { getCandidate } from "@/lib/api/candidate";
 import { TweaksProvider } from "@/lib/tweaks";
 import { STORAGE_KEY } from "@/lib/tweaks-init";
+
+vi.mock("@/lib/api/bff", async () => {
+  const { mockBffFetch } = await import("@/lib/api/test-fixtures");
+  return { bffFetch: mockBffFetch };
+});
+
+const { getJobsPool } = await import("@/lib/api/jobs");
+const { getLenses } = await import("@/lib/api/lenses");
+const { getCandidate } = await import("@/lib/api/candidate");
 
 afterEach(cleanup);
 beforeEach(() => localStorage.clear());
 const props = {
-  pool: getJobsPool(),
-  lenses: getLenses(),
-  candidate: getCandidate(),
+  pool: await getJobsPool(),
+  lenses: await getLenses(),
+  candidate: await getCandidate(),
 };
 
 function renderView(tweaks?: Record<string, unknown>) {

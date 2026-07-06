@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getApprovals } from "@/lib/api/approvals";
 
-export function GET(): NextResponse {
-  return NextResponse.json(getApprovals());
+export async function GET(): Promise<NextResponse> {
+  return NextResponse.json(await getApprovals());
 }

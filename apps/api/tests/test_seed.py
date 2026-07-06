@@ -28,7 +28,7 @@ async def test_seed_is_idempotent_and_seeds_low_confidence_posting() -> None:
             text("SELECT set_config('app.user_id', :uid, true)").bindparams(uid=str(uid))
         )
         posting_count = await session.scalar(select(func.count()).select_from(Posting))
-        assert posting_count == 3  # stable across the two seed runs
+        assert posting_count == 13  # stable across the two seed runs
 
         min_conf = await session.scalar(select(func.min(Posting.extraction_confidence)))
         assert min_conf is not None  # the low-confidence posting exists

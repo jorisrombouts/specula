@@ -1,10 +1,16 @@
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import { TargetingView } from "@/components/targeting/targeting-view";
-import { getTargeting } from "@/lib/api/targeting";
+
+vi.mock("@/lib/api/bff", async () => {
+  const { mockBffFetch } = await import("@/lib/api/test-fixtures");
+  return { bffFetch: mockBffFetch };
+});
+
+const { getTargeting } = await import("@/lib/api/targeting");
 
 afterEach(cleanup);
-const t = getTargeting();
+const t = await getTargeting();
 
 describe("TargetingView", () => {
   it("renders tag fields, seniority chips, preferences, and the invariant banner", () => {

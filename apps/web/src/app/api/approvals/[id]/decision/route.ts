@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import type { ApprovalDecision } from "@/lib/api/approvals";
+import { bffFetch } from "@/lib/api/bff";
 
 const DECISIONS = new Set<ApprovalDecision>(["approve", "reject", "snooze"]);
 
@@ -13,8 +14,9 @@ export async function POST(
     return NextResponse.json({ error: "invalid decision" }, { status: 400 });
   }
 
-  // Frontend-wiring lane: forward to FastAPI `POST /approvals/{id}/decision`
-  // via the shared service-JWT `bffFetch`. Until that exists, acknowledge so the
-  // queue UI is fully wired client-side.
-  return NextResponse.json({ ok: true, id, decision: body.decision });
+  const result = await bffFetch(`/approvals/${id}/decision`, {
+    method: "POST",
+    body: JSON.stringify({ decision: body.decision }),
+  });
+  return NextResponse.json(result);
 }

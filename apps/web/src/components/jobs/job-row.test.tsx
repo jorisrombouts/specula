@@ -1,10 +1,16 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import { JobRow } from "@/components/jobs/job-row";
-import { getJobsPool } from "@/lib/api/jobs";
+
+vi.mock("@/lib/api/bff", async () => {
+  const { mockBffFetch } = await import("@/lib/api/test-fixtures");
+  return { bffFetch: mockBffFetch };
+});
+
+const { getJobsPool } = await import("@/lib/api/jobs");
 
 afterEach(cleanup);
-const pool = getJobsPool();
+const pool = await getJobsPool();
 const base = pool[0];
 
 describe("JobRow", () => {

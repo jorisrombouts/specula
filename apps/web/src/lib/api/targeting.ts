@@ -1,7 +1,6 @@
 import type { Targeting } from "@specula/shared-types";
-import { targeting } from "@/lib/seed/data";
+import { bffFetch } from "@/lib/api/bff";
 
-// M2: BFF → FastAPI.
-export function getTargeting(): Targeting {
-  return targeting;
+export async function getTargeting(): Promise<Targeting> {
+  return bffFetch<Targeting>("/targeting");
 }

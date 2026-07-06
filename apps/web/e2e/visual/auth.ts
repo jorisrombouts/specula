@@ -13,6 +13,23 @@
 export const E2E_AUTH_SECRET =
   "specula-visual-e2e-secret-not-for-production-do-not-reuse";
 
+// The HS256 secret the app's `bffFetch` signs the service JWT with and the local
+// FastAPI validates. Both the Next server and the uvicorn started by the harness get
+// this same value. Throwaway; never a production secret.
+export const E2E_SERVICE_JWT_SECRET =
+  "specula-service-jwt-e2e-secret-not-for-production";
+
+// The harness authenticates as the SEEDED demo user (`google_sub = "demo-user"`) so the
+// API returns the seeded demo dataset the baselines/specs expect.
+export const E2E_USER_SUB = "demo-user";
+
+// FastAPI base URL the Next server calls, and the DB uvicorn serves. Overridable via env
+// (CI points at its own Postgres on :5432; local defaults to the dev DB on :55432).
+export const E2E_API_URL = process.env.E2E_API_URL ?? "http://localhost:8000";
+export const E2E_DATABASE_URL =
+  process.env.E2E_DATABASE_URL ??
+  "postgresql+asyncpg://specula_app:specula@localhost:55432/specula";
+
 // Auth.js names the JWT session cookie `authjs.session-token` over http (the
 // `__Secure-` prefix is added only for https). The visual server runs on
 // http://localhost, so this is both the cookie name and the encode `salt`.

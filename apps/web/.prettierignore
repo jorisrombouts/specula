@@ -1,4 +1,6 @@
 .next
+.next-authed
+.next*
 node_modules
 pnpm-lock.yaml
 test-results

@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { auth } from "@/auth";
+import { getSession } from "@/auth";
 import { Sidebar } from "@/components/sidebar";
 import { IntroGate } from "@/components/intro/intro-gate";
 import { getJobsPool } from "@/lib/api/jobs";
@@ -11,7 +11,7 @@ export default async function AppLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const session = await auth();
+  const session = await getSession();
   // Local-only auth bypass for verification — double-gated so it can NEVER
   // activate in production (NODE_ENV is "production" on Vercel).
   const bypass =
@@ -21,7 +21,7 @@ export default async function AppLayout({
     session?.user ??
     (bypass ? { name: "Dev (bypass)", email: "dev@local" } : null);
   if (!user) redirect("/signin");
-  const pool = getJobsPool();
+  const pool = await getJobsPool();
   const roles = pool.length;
   const isNew = pool.filter((j) => j.isNew).length;
   return (

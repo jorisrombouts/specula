@@ -1,13 +1,13 @@
 "use client";
 
-import { useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type {
   Job,
   JobSort,
+  JobsResponse,
   LensSummary,
   Candidate,
 } from "@specula/shared-types";
-import { scoredList } from "@/lib/jobs-scoring";
 import { flipDelta } from "@/lib/flip";
 import { usePrefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
 import { useTweaks } from "@/lib/tweaks";
@@ -28,7 +28,10 @@ export function JobsView({
   lenses: LensSummary[];
   candidate: Candidate;
 }) {
-  const [lens, setLens] = useState("all");
+  // The lenses come from the API default-first, so lenses[0] is the default ("All")
+  // lens; its id is a real per-user UUID (not a seed sentinel).
+  const defaultLensId = lenses[0]?.id ?? "";
+  const [lens, setLens] = useState(defaultLensId);
   const [sort, setSort] = useState<JobSort>("match");
   const [selected, setSelected] = useState<Job | null>(null);
   const [morphFrom, setMorphFrom] = useState<MorphRects | null>(null);
@@ -38,7 +41,24 @@ export function JobsView({
   const compact = tweaks.density === "compact";
   const cards = tweaks.layout === "cards";
 
-  const list = scoredList(pool, lens, sort);
+  // The pool prop is the default-lens list rendered on first paint. Switching a lens (or
+  // sort) re-fetches from the API, which filters + re-scores server-side per that lens —
+  // the client no longer re-derives ranking (that logic was keyed to seed lens ids).
+  const [list, setList] = useState<Job[]>(pool);
+  useEffect(() => {
+    let cancelled = false;
+    const params = new URLSearchParams({ lens, sort });
+    fetch(`/api/jobs?${params}`)
+      .then((r) => (r.ok ? (r.json() as Promise<JobsResponse>) : null))
+      .then((data) => {
+        if (!cancelled && data) setList(data.jobs);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [lens, sort]);
+
   const activeLens = lenses.find((l) => l.id === lens) ?? lenses[0];
   const closingSoon = list.filter(
     (j) => j.deadlineDays <= 7 && j.status !== "Applied",
@@ -109,8 +129,10 @@ export function JobsView({
     flip.current.pos = newPos;
     flip.current.jobs = newJobs;
     flip.current.init = true;
+    // Run after the (re-fetched) list renders — the new list arriving is what drives
+    // the FLIP, since lens/sort changes now resolve asynchronously via the API.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sig]);
+  }, [list]);
 
   return (
     <section
@@ -161,7 +183,7 @@ export function JobsView({
           <span className="text-ink">{activeLens.scope}</span>
           <span>· {activeLens.modes.join(" / ")}</span>
           <span>· {activeLens.origin}</span>
-          {lens !== "all" && (
+          {lens !== defaultLensId && (
             <span className="text-accent-ink">
               · ◉ match re-scored for this lens
             </span>
