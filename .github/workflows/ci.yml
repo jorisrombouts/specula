@@ -133,7 +133,16 @@ jobs:
       # Pixel regression against the API-backed production build (own config, own
       # servers — a uvicorn + a next start). Committed Linux baselines are generated
       # by `just visual-update` (same Chromium + font stack + seeded data).
-      - run: pnpm exec playwright test --config playwright.visual.config.ts
+      # TEMP: regenerate Linux baselines against the API-backed build, then upload
+      # them to commit locally. Revert to a plain compare run after.
+      - run: pnpm exec playwright test --config playwright.visual.config.ts --update-snapshots
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-baselines
+          path: apps/web/e2e/visual/**/*-visual-linux.png
+          retention-days: 7
+          if-no-files-found: warn
       - if: failure()
         uses: actions/upload-artifact@v4
         with:
