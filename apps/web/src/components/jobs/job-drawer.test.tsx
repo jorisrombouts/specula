@@ -1,12 +1,18 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import { JobDrawer } from "@/components/jobs/job-drawer";
-import { getJobsPool } from "@/lib/api/jobs";
-import { getCandidate } from "@/lib/api/candidate";
+
+vi.mock("@/lib/api/bff", async () => {
+  const { mockBffFetch } = await import("@/lib/api/test-fixtures");
+  return { bffFetch: mockBffFetch };
+});
+
+const { getJobsPool } = await import("@/lib/api/jobs");
+const { getCandidate } = await import("@/lib/api/candidate");
 
 afterEach(cleanup);
-const job = getJobsPool()[0];
-const candidate = getCandidate();
+const job = (await getJobsPool())[0];
+const candidate = await getCandidate();
 
 describe("JobDrawer", () => {
   it("renders the title + all section heads", () => {

@@ -1,6 +1,12 @@
-import { describe, it, expect } from "vitest";
-import { GET } from "@/app/api/jobs/route";
+import { describe, it, expect, vi } from "vitest";
 import type { JobsResponse } from "@specula/shared-types";
+
+vi.mock("@/lib/api/bff", async () => {
+  const { mockBffFetch } = await import("@/lib/api/test-fixtures");
+  return { bffFetch: mockBffFetch };
+});
+
+const { GET } = await import("@/app/api/jobs/route");
 
 async function call(url: string): Promise<JobsResponse> {
   const res = await GET(new Request(url));

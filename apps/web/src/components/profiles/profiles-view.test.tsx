@@ -1,10 +1,16 @@
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import { render, fireEvent, cleanup, within } from "@testing-library/react";
 import { ProfilesView } from "@/components/profiles/profiles-view";
-import { getLenses } from "@/lib/api/lenses";
+
+vi.mock("@/lib/api/bff", async () => {
+  const { mockBffFetch } = await import("@/lib/api/test-fixtures");
+  return { bffFetch: mockBffFetch };
+});
+
+const { getLenses } = await import("@/lib/api/lenses");
 
 afterEach(cleanup);
-const lenses = getLenses();
+const lenses = await getLenses();
 
 describe("ProfilesView", () => {
   it("shows DERIVED active/total (4 active / 5 total) and 4 cards (excludes 'all')", () => {

@@ -2,13 +2,19 @@ import { describe, it, expect, afterEach, vi } from "vitest";
 import { render, screen, cleanup } from "@testing-library/react";
 import { InsightsView } from "@/components/insights/insights-view";
 import { DemandTrend } from "@/components/insights/demand-trend";
-import { getInsights } from "@/lib/api/insights";
+
+vi.mock("@/lib/api/bff", async () => {
+  const { mockBffFetch } = await import("@/lib/api/test-fixtures");
+  return { bffFetch: mockBffFetch };
+});
+
+const { getInsights } = await import("@/lib/api/insights");
 
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
 });
-const insights = getInsights();
+const insights = await getInsights();
 
 describe("InsightsView", () => {
   it("renders the low-confidence exclusion banner with the excluded count", () => {

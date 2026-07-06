@@ -10,6 +10,10 @@ import {
 import { ApprovalsView } from "@/components/approvals/approvals-view";
 import { ApprovalCard } from "@/components/approvals/approval-card";
 
+vi.mock("@/lib/api/bff", async () => {
+  const { mockBffFetch } = await import("@/lib/api/test-fixtures");
+  return { bffFetch: mockBffFetch };
+});
 vi.mock("@/lib/api/approvals", async (importActual) => {
   const actual = await importActual<typeof import("@/lib/api/approvals")>();
   return {
@@ -18,14 +22,15 @@ vi.mock("@/lib/api/approvals", async (importActual) => {
   };
 });
 
-import { getApprovals, postApprovalDecision } from "@/lib/api/approvals";
+const { getApprovals, postApprovalDecision } =
+  await import("@/lib/api/approvals");
 
 afterEach(() => {
   cleanup();
   vi.mocked(postApprovalDecision).mockClear();
 });
 
-const approvals = getApprovals();
+const approvals = await getApprovals();
 const verified = approvals.find((a) => !a.unverified)!;
 const unverified = approvals.find((a) => a.unverified)!;
 

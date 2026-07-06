@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import { render, screen, cleanup } from "@testing-library/react";
 import {
   InsightRecord,
@@ -6,11 +6,17 @@ import {
   Lifecycle,
   Feedback,
 } from "@/components/jobs/drawer-sections";
-import { getJobsPool } from "@/lib/api/jobs";
 import type { Candidate } from "@specula/shared-types";
 
+vi.mock("@/lib/api/bff", async () => {
+  const { mockBffFetch } = await import("@/lib/api/test-fixtures");
+  return { bffFetch: mockBffFetch };
+});
+
+const { getJobsPool } = await import("@/lib/api/jobs");
+
 afterEach(cleanup);
-const base = getJobsPool()[0];
+const base = (await getJobsPool())[0];
 
 describe("drawer sections", () => {
   it("InsightRecord marks low-confidence extraction as 'surfaced, not trusted' (<75)", () => {

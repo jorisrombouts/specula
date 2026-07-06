@@ -1,21 +1,27 @@
-import { describe, it, expect } from "vitest";
-import { getJobsPool, getJob, getJobs } from "@/lib/api/jobs";
-import { getLenses } from "@/lib/api/lenses";
-import { getCandidate } from "@/lib/api/candidate";
-import { GET as jobsRoute } from "@/app/api/jobs/route";
+import { describe, it, expect, vi } from "vitest";
+
+vi.mock("@/lib/api/bff", async () => {
+  const { mockBffFetch } = await import("@/lib/api/test-fixtures");
+  return { bffFetch: mockBffFetch };
+});
+
+const { getJobsPool, getJob, getJobs } = await import("@/lib/api/jobs");
+const { getLenses } = await import("@/lib/api/lenses");
+const { getCandidate } = await import("@/lib/api/candidate");
+const { GET: jobsRoute } = await import("@/app/api/jobs/route");
 
 describe("lib/api data-access", () => {
-  it("getJobsPool returns the full 13-job pool", () => {
-    expect(getJobsPool()).toHaveLength(13);
+  it("getJobsPool returns the full 13-job pool", async () => {
+    expect(await getJobsPool()).toHaveLength(13);
   });
 
-  it("getJob returns a job by id, or null", () => {
-    expect(getJob("j1")?.id).toBe("j1");
-    expect(getJob("nope")).toBeNull();
+  it("getJob returns a job by id, or null", async () => {
+    expect((await getJob("j1"))?.id).toBe("j1");
+    expect(await getJob("nope")).toBeNull();
   });
 
-  it("getJobs('all','match') returns 13 jobs sorted desc by match + derived lenses", () => {
-    const res = getJobs("all", "match");
+  it("getJobs('all','match') returns 13 jobs sorted desc by match + derived lenses", async () => {
+    const res = await getJobs("all", "match");
     expect(res.jobs).toHaveLength(13);
     expect(res.sort).toBe("match");
     expect(
@@ -26,25 +32,25 @@ describe("lib/api data-access", () => {
     expect(all.isNew).toBe(7); // DERIVED — not 11
   });
 
-  it("getJobs('foreign','match') filters + re-scores per lens", () => {
-    const res = getJobs("foreign", "match");
+  it("getJobs('foreign','match') filters + re-scores per lens", async () => {
+    const res = await getJobs("foreign", "match");
     expect(res.jobs.length).toBeGreaterThan(0);
     expect(res.jobs.length).toBeLessThan(13);
   });
 
-  it("getLenses returns 5 derived summaries", () => {
-    const ls = getLenses();
+  it("getLenses returns 5 derived summaries", async () => {
+    const ls = await getLenses();
     expect(ls).toHaveLength(5);
     expect(ls.find((l) => l.id === "all")!.count).toBe(13);
   });
 
-  it("getCandidate returns the candidate profile", () => {
-    expect(getCandidate().skills.length).toBeGreaterThan(0);
+  it("getCandidate returns the candidate profile", async () => {
+    expect((await getCandidate()).skills.length).toBeGreaterThan(0);
   });
 
-  it("the refactored /api/jobs route still returns the JobsResponse shape", async () => {
+  it("the /api/jobs route forwards to the (BFF-fetched) JobsResponse shape", async () => {
     const res = jobsRoute(new Request("http://x/api/jobs?lens=all&sort=match"));
-    const body = await res.json();
+    const body = await (await res).json();
     expect(body.jobs).toHaveLength(13);
     expect(body.lenses.find((l: { id: string }) => l.id === "all").count).toBe(
       13,

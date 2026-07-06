@@ -1,44 +1,48 @@
-import { describe, it, expect } from "vitest";
-import { getTargeting } from "@/lib/api/targeting";
-import { getSkillsGap } from "@/lib/api/skills-gap";
-import { getTweaks, putTweaks } from "@/lib/api/tweaks";
-import { GET as targetingRoute } from "@/app/api/targeting/route";
-import {
-  GET as tweaksRoute,
-  PUT as tweaksPutRoute,
-} from "@/app/api/tweaks/route";
-import { TWEAK_DEFAULTS } from "@/lib/tweaks-init";
+import { describe, it, expect, vi } from "vitest";
+
+vi.mock("@/lib/api/bff", async () => {
+  const { mockBffFetch } = await import("@/lib/api/test-fixtures");
+  return { bffFetch: mockBffFetch };
+});
+
+const { getTargeting } = await import("@/lib/api/targeting");
+const { getSkillsGap } = await import("@/lib/api/skills-gap");
+const { getTweaks, putTweaks } = await import("@/lib/api/tweaks");
+const { GET: targetingRoute } = await import("@/app/api/targeting/route");
+const { GET: tweaksRoute, PUT: tweaksPutRoute } =
+  await import("@/app/api/tweaks/route");
+const { TWEAK_DEFAULTS } = await import("@/lib/tweaks-init");
 
 describe("lib/api config data-access", () => {
-  it("getTargeting returns the targeting baseline", () => {
-    const t = getTargeting();
+  it("getTargeting returns the targeting baseline", async () => {
+    const t = await getTargeting();
     expect(t.roleTitles.length).toBeGreaterThan(0);
     expect(t.seniority.length).toBeGreaterThan(0);
   });
 
-  it("getSkillsGap returns the skills-gap list", () => {
-    const g = getSkillsGap();
+  it("getSkillsGap returns the skills-gap list", async () => {
+    const g = await getSkillsGap();
     expect(g.length).toBeGreaterThan(0);
     expect(g[0]).toHaveProperty("roles");
     expect(g[0]).toHaveProperty("note");
   });
 
-  it("the refactored /api/targeting route still returns the same shape", async () => {
-    const body = await targetingRoute().json();
-    expect(body.roleTitles).toEqual(getTargeting().roleTitles);
+  it("the /api/targeting route forwards the same shape", async () => {
+    const body = await (await targetingRoute()).json();
+    expect(body.roleTitles).toEqual((await getTargeting()).roleTitles);
   });
 
-  it("getTweaks returns the tweak defaults", () => {
-    expect(getTweaks()).toEqual(TWEAK_DEFAULTS);
+  it("getTweaks returns the stored tweaks", async () => {
+    expect(await getTweaks()).toEqual(TWEAK_DEFAULTS);
   });
 
-  it("putTweaks echoes the validated tweaks", () => {
+  it("putTweaks persists and returns the saved tweaks", async () => {
     const next = { ...TWEAK_DEFAULTS, mstyle: "ring" as const };
-    expect(putTweaks(next)).toEqual(next);
+    expect(await putTweaks(next)).toEqual(next);
   });
 
-  it("the /api/tweaks route GETs defaults and PUTs an echo", async () => {
-    const getBody = await tweaksRoute().json();
+  it("the /api/tweaks route GETs the stored value and PUTs through the update", async () => {
+    const getBody = await (await tweaksRoute()).json();
     expect(getBody).toEqual(TWEAK_DEFAULTS);
 
     const next = { ...TWEAK_DEFAULTS, layout: "cards" };
