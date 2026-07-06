@@ -36,3 +36,6 @@ apps/web/e2e/visual/.auth/
 # Tooling
 .pre-commit-cache/
 .vscode/
+
+# git worktrees for parallel M2 fan-out lanes
+.worktrees/
