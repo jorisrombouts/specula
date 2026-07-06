@@ -7,7 +7,15 @@ import { test, expect, gotoStable } from "./fixtures";
 // caught. We seed the tweak via an init script (deterministic — no clicking
 // through the panel), then confirm it took before shooting.
 
+// TweaksProvider is now server-backed: on mount it reconciles against
+// `GET /api/tweaks` and the server value wins. These are *layout* snapshots, so we
+// pin the tweak on BOTH inputs — the localStorage seed (instant/FOUC) and the server
+// reconcile response — otherwise the server value would revert the forced layout.
+// (Tweak persistence itself is covered by the tweaks lane's API/provider tests.)
 test("jobs view — cards layout", async ({ stablePage: page }) => {
+  await page.route("**/api/tweaks", (route) =>
+    route.fulfill({ json: { layout: "cards" } }),
+  );
   await page.addInitScript(() => {
     try {
       localStorage.setItem(
@@ -24,6 +32,9 @@ test("jobs view — cards layout", async ({ stablePage: page }) => {
 });
 
 test("jobs view — ring meters", async ({ stablePage: page }) => {
+  await page.route("**/api/tweaks", (route) =>
+    route.fulfill({ json: { mstyle: "ring" } }),
+  );
   await page.addInitScript(() => {
     try {
       localStorage.setItem(
