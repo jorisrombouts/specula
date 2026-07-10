@@ -71,6 +71,24 @@ migration name:
 seed:
     cd apps/api && uv run python -m specula_api.seed
 
+# Live pipeline harness (demo tenant, dev DB on :55432). Requires OPENAI_API_KEY in the env.
+# Always runs PIPELINE_MODE=record so real responses also regenerate the committed fixtures
+# in apps/api/tests/fixtures/pipeline — see docs/RUNNING-LIVE.md.
+
+# Real OpenAI web-search discovery run for the demo user; prints the approvals found.
+live-discover:
+    cd apps/api && PIPELINE_MODE=record uv run python -m specula_api.cli discover
+
+# Approve the demo user's undecided approval matching DOMAIN and ingest it (real
+# enrich+crawl+extract+embed+score); prints the resulting job(s). e.g. just live-ingest acme.com
+live-ingest domain:
+    cd apps/api && PIPELINE_MODE=record uv run python -m specula_api.cli ingest {{domain}}
+
+# End-to-end proof: discover, ingest the first ATS-detected approval (one company only —
+# cost guardrail), print its scored jobs.
+prove-live:
+    cd apps/api && PIPELINE_MODE=record uv run python -m specula_api.cli prove-live
+
 # Create + prepare a database on the shared container. Extensions + the specula_app
 # grant need the superuser; migrate/seed then run as the non-superuser specula_app.
 db-create db:
