@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     crawl_timeout_s: float = 15.0
     discovery_max_searches: int = 5
     low_confidence_threshold: int = 50  # matches services/insights.py LOW_CONFIDENCE_THRESHOLD
-    pipeline_mode: Literal["live", "recorded"] = "recorded"
+    pipeline_mode: Literal["live", "recorded"] = "live"
     pipeline_execution: Literal["enqueue", "inline"] = "inline"  # no Redis/worker this milestone
     pipeline_fixtures_dir: str | None = None
 

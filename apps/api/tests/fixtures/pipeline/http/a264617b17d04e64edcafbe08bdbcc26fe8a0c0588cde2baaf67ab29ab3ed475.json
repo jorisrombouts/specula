@@ -1,0 +1,6 @@
+{
+  "url": "https://boards-api.greenhouse.io/v1/boards/acme/jobs",
+  "status": 200,
+  "text": "{\n  \"jobs\": [\n    {\n      \"id\": 4123456,\n      \"title\": \"Senior Backend Engineer\",\n      \"absolute_url\": \"https://boards.greenhouse.io/acme/jobs/4123456\",\n      \"location\": { \"name\": \"Remote\" },\n      \"updated_at\": \"2026-06-01T12:00:00-05:00\"\n    },\n    {\n      \"id\": 4123457,\n      \"title\": \"Product Manager, Platform\",\n      \"absolute_url\": \"https://boards.greenhouse.io/acme/jobs/4123457\",\n      \"location\": { \"name\": \"New York, NY\" },\n      \"updated_at\": \"2026-06-02T09:30:00-05:00\"\n    },\n    {\n      \"id\": 4123458,\n      \"title\": \"Staff Data Scientist\",\n      \"absolute_url\": \"https://boards.greenhouse.io/acme/jobs/4123458\",\n      \"location\": { \"name\": \"San Francisco, CA\" },\n      \"updated_at\": \"2026-06-03T14:15:00-05:00\"\n    }\n  ]\n}\n",
+  "content_type": "application/json"
+}
