@@ -139,6 +139,38 @@ async def test_approve_creates_company_and_removes_from_queue(migrated_db: None)
 
 
 @requires_db
+async def test_approve_triggers_inline_company_ingest(migrated_db: None) -> None:
+    """Approving schedules trigger_company_ingest as a BackgroundTask; ASGITransport runs
+    BackgroundTasks before the client call returns (see test_run_api.py), and pipeline_mode
+    defaults to "recorded", so the enrichment below is deterministic — no real OpenAI/network."""
+    sub, email = _sub()
+    user_id = await _seed_user_with_approvals(sub, email, [_LIGHTHOUSE])
+    headers = _auth_header(sub, email)
+
+    transport = ASGITransport(app=create_app())
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        approval_id = (await client.get("/api/v1/approvals", headers=headers)).json()[0]["id"]
+        decide = await client.post(
+            f"/api/v1/approvals/{approval_id}/decision",
+            json={"decision": "approve"},
+            headers=headers,
+        )
+        assert decide.status_code == 200
+
+    companies = await _companies_for(user_id)
+    assert len(companies) == 1
+    company = companies[0]
+    # Fields carried straight from the approval stay put...
+    assert company.ats == "greenhouse"
+    assert company.hq_country == "NL"
+    # ...and enrichment fills in what the approval didn't know, from
+    # tests/fixtures/pipeline/openai/enrich/lighthouse.app.json.
+    assert company.hq_confidence == 92
+    assert company.comp_estimate == "€70k-€95k, NL market"
+    assert company.careers_url == "https://lighthouse.app/careers"
+
+
+@requires_db
 @pytest.mark.parametrize("decision", ["reject", "snooze"])
 async def test_reject_and_snooze_persist_without_creating_a_company(
     migrated_db: None, decision: str

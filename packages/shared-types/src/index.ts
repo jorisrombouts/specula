@@ -59,3 +59,11 @@ export interface Insights {
 export interface SkillsGap { skill: string; roles: number; note: string }
 
 export interface JobsResponse { jobs: Job[]; lenses: LensSummary[]; sort: JobSort }
+
+export interface RunStats { found: number; new: number; closed: number; lowConfExcluded: number; errors: number }
+export interface Run {
+  id: string; kind: "scheduled" | "on_demand";
+  status: "queued" | "running" | "done" | "error";
+  startedAt: string | null; finishedAt: string | null;
+  stats: RunStats; createdAt: string;
+}

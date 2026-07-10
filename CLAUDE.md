@@ -20,11 +20,14 @@ instrument UI. Built in phases (M0–M6) from a Claude Design prototype.
 - One phase at a time via superpowers: brainstorm → writing-plans → executing-plans; TDD for logic;
   verification-before-completion before any "done"; code-review before merge.
 - Default to YAGNI/KISS: no service, file, folder, or abstraction until the milestone that needs it.
+- **Current focus (M3):** full pipeline discovery→approval→crawl→extract→score, **manual trigger,
+  inline execution** — scheduler/worker/hosting deferred.
 
 ## Stack & hosting (free-tier first)
 - Monorepo: `apps/api` (FastAPI · uv · ruff · mypy --strict · pytest) + `apps/web` (Next 16 · TS strict
   · Tailwind · ESLint + Prettier). pnpm workspace + `packages/shared-types` arrive in M1.
-- Vercel (web) + Neon (Postgres+pgvector) + Upstash (Redis, M3). OpenAI is the only paid piece. Avoid paid infra.
+- Vercel (web) + Neon (Postgres+pgvector) + Upstash (Redis) — deferred with the scheduler (later
+  milestone); the manual pipeline runs inline. OpenAI is the only paid piece. Avoid paid infra.
 - Auth: Auth.js v5 (NextAuth), **Google-only** sign-in, **JWT (stateless) session** — no DB adapter;
   FastAPI owns the DB. Dev DB = local docker Postgres (`just up`); Neon is a deploy-time DATABASE_URL swap.
   DB access is async SQLAlchemy 2.0 + Alembic (first migration = `users`, identity only).

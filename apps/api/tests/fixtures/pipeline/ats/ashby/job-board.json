@@ -1,0 +1,28 @@
+{
+  "jobs": [
+    {
+      "id": "b6f1c2e0-3333-4b3c-8d4e-abcdef654321",
+      "title": "Engineering Manager, Payments",
+      "jobUrl": "https://jobs.ashbyhq.com/acme/b6f1c2e0-3333-4b3c-8d4e-abcdef654321",
+      "location": "Remote",
+      "department": "Engineering",
+      "publishedAt": "2026-06-01T00:00:00.000Z"
+    },
+    {
+      "id": "c7g2d3f1-4444-4c4d-9e5f-bcdef7654321",
+      "title": "Technical Recruiter",
+      "jobUrl": "https://jobs.ashbyhq.com/acme/c7g2d3f1-4444-4c4d-9e5f-bcdef7654321",
+      "location": "New York, NY",
+      "department": "People",
+      "publishedAt": "2026-06-02T00:00:00.000Z"
+    },
+    {
+      "id": "d8h3e4g2-5555-4d5e-8f6a-cdef87654321",
+      "title": "Support Engineer",
+      "jobUrl": "https://jobs.ashbyhq.com/acme/d8h3e4g2-5555-4d5e-8f6a-cdef87654321",
+      "location": "Berlin, DE",
+      "department": "Support",
+      "publishedAt": "2026-06-03T00:00:00.000Z"
+    }
+  ]
+}

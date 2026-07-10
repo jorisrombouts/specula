@@ -9,6 +9,7 @@ import type {
   JobsResponse,
   JobSort,
   LensSummary,
+  Run,
   SkillsGap,
   Targeting,
 } from "@specula/shared-types";
@@ -57,6 +58,17 @@ export const companiesApiFixture: CompanyRow[] = seedCompanies.map((c, i) => ({
   tracking: true,
 }));
 export const tweaksApiFixture: Tweaks = TWEAK_DEFAULTS;
+
+// Mirrors the demo user's seeded Run row (apps/api/specula_api/seed.py).
+export const runApiFixture: Run = {
+  id: "r1",
+  kind: "scheduled",
+  status: "done",
+  startedAt: "2026-07-05T08:00:00Z",
+  finishedAt: "2026-07-05T08:03:00Z",
+  stats: { found: 13, new: 7, closed: 0, lowConfExcluded: 1, errors: 0 },
+  createdAt: "2026-07-05T08:00:00Z",
+};
 
 function jobsResponseFixture(lens: string, sort: JobSort): JobsResponse {
   return {
@@ -122,6 +134,25 @@ export async function mockBffFetch<T = unknown>(
   if (path.startsWith("/jobs")) {
     const { lens, sort } = parseJobsQuery(path);
     return jobsResponseFixture(lens, sort) as T;
+  }
+  if (path === "/runs" && init?.method === "POST") {
+    return {
+      ...runApiFixture,
+      id: "r2",
+      kind: "on_demand",
+      status: "queued",
+      startedAt: null,
+      finishedAt: null,
+      stats: { found: 0, new: 0, closed: 0, lowConfExcluded: 0, errors: 0 },
+    } as T;
+  }
+  if (path === "/runs/latest") return runApiFixture as T;
+  if (path.startsWith("/runs/")) {
+    const id = path.slice("/runs/".length);
+    if (id !== runApiFixture.id) {
+      throw new Error(`mockBffFetch: no fixture run "${id}"`);
+    }
+    return runApiFixture as T;
   }
   throw new Error(`mockBffFetch: no fixture for path "${path}"`);
 }

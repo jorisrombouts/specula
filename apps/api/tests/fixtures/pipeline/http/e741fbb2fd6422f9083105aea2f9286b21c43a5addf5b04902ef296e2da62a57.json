@@ -1,0 +1,6 @@
+{
+  "url": "https://www.acmecorp.example/spa-careers",
+  "status": 200,
+  "text": "<html><body><div id=\"root\"></div><script src=\"/static/bundle.js\"></script></body></html>",
+  "content_type": "text/html"
+}

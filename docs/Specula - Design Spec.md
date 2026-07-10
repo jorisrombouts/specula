@@ -12,6 +12,12 @@
 > **[DECISION]** records a non-obvious call and its rationale; **[OPEN]** flags something the team
 > must confirm before/within the relevant milestone.
 
+> **Reconciled with CLAUDE.md (2026-07-10). CLAUDE.md governs on conflict.** Applied: no billing /
+> Stripe / plan tiers / entitlement gating; no object storage (provenance = `content_hash` +
+> `source_url`; logos = favicon URL); Next.js 16; Google-only auth (JWT stateless, no DB adapter);
+> low-confidence threshold = 50. **Pipeline is currently manual-trigger only — the weekly scheduler
+> and its background-worker/queue/hosting infra are deferred to a later milestone.**
+
 ---
 
 ## 0. Concept & positioning (unchanged from prototype)
@@ -41,8 +47,6 @@ shared-element morph (§13). Production must preserve all four.
   structured (schema-validated) output, using **OpenAI**.
 - **Scheduled** weekly discovery/refresh per user + **on-demand** "Refresh now."
 - Persisted user state (statuses, notes, feedback, lens/targeting/candidate edits, tweaks).
-- **Billing-ready** foundation (Stripe customer + subscription scaffolding, plan/entitlement
-  checks) — wired but not necessarily charging in v1.
 
 **Explicitly out of v1 (spec the seams, don't build):**
 - ATS API integrations (Greenhouse/Lever/Ashby official APIs) — design the `source` abstraction
@@ -63,12 +67,12 @@ shared-element morph (§13). Production must preserve all four.
                 │                                             │
    ┌────────────┴───────────────┐               ┌────────────▼─────────────┐
    │  Vercel                     │   server-to-  │  Container host           │
-   │  • Next.js 15 (App Router)  │   server      │  (Fly.io / Railway /      │
+   │  • Next.js 16 (App Router)  │   server      │  (Fly.io / Railway /      │
    │    SSR/RSC + UI             │   (signed     │   Render)                 │
    │  • Auth (Auth.js)           │   service     │  • FastAPI (Python 3.12)  │
    │  • Thin BFF route handlers  │   token)      │    REST API               │
    │    proxy → FastAPI          ├──────────────►│  • Worker (Celery/Arq)    │
-   │  • Stripe webhooks          │               │  • Scheduler (beat/cron)  │
+   │                              │               │  • Scheduler (beat/cron)  │
    └────────────┬───────────────┘               └───────────┬──────────────┘
                 │                                            │
                 │                                            │
@@ -78,19 +82,13 @@ shared-element morph (§13). Production must preserve all four.
         │ + pgvector    │   │ + cache +    │   │ (extraction + scoring,  │
         │ (tenant data) │   │  rate limit) │   │  structured outputs)    │
         └───────────────┘   └──────────────┘   └─────────────────────────┘
-                                  ▲
-                                  │ object storage (raw HTML snapshots, logos)
-                          ┌───────┴────────┐
-                          │ S3-compatible  │
-                          │ (R2 / S3)      │
-                          └────────────────┘
 ```
 
 ### [DECISION] Why a split deployment (Vercel + container host)
 You chose FastAPI for the backend (right call — the ML/scoring/scraping work is Python-native)
 **and** Vercel for infra. Vercel serverless can't run a long-lived FastAPI app with a queue,
 scheduler, and minutes-long scraping/LLM jobs. So:
-- **Vercel** hosts the **Next.js app** (UI, RSC/SSR, Auth.js, Stripe webhooks) and a **thin BFF**:
+- **Vercel** hosts the **Next.js app** (UI, RSC/SSR, Auth.js) and a **thin BFF**:
   Next route handlers that authenticate the user and proxy to FastAPI with a signed service token.
   The browser never talks to FastAPI directly.
 - **A container host** (Fly.io recommended; Railway/Render fine) runs **FastAPI**, the **worker**,
@@ -107,7 +105,7 @@ web tier, so the split above is the spec.
 ```
 specula/
   apps/
-    web/                      # Next.js 15 (App Router, TS, Tailwind) — deploys to Vercel
+    web/                      # Next.js 16 (App Router, TS, Tailwind) — deploys to Vercel
       app/                    # routes: (app)/jobs, /companies, /insights, /profiles, ...
       components/             # ported prototype components (see §12)
       lib/                    # api client, auth, formatting, hooks
@@ -135,9 +133,9 @@ specula/
 
 | Layer | Choice | Notes |
 |---|---|---|
-| Web framework | **Next.js 15**, App Router, React 19, TypeScript (strict) | RSC for data-heavy views; client components for the animated surfaces. |
+| Web framework | **Next.js 16**, App Router, React 19, TypeScript (strict) (Turbopack production builds) | RSC for data-heavy views; client components for the animated surfaces. |
 | Styling | **Tailwind CSS v4** with design tokens as theme (see §11) | Pixel-faithful port; tokens map 1:1 to prototype CSS variables. |
-| Web auth | **Auth.js (NextAuth v5)**, email magic-link + OAuth (Google) | Session cookie; server token minted for BFF→API calls. |
+| Web auth | **Auth.js (NextAuth v5)**, OAuth (Google) only | Session cookie; server token minted for BFF→API calls. |
 | Web data | Server Components + route handlers (BFF); **TanStack Query** for client mutations/optimistic UI | Animated views need client cache; lists can be RSC-fetched. |
 | Backend | **FastAPI** (Python 3.12), Pydantic v2 | REST, OpenAPI 3.1 emitted for type-gen. |
 | ORM / migrations | **SQLAlchemy 2.0** + **Alembic** | Async engine. |
@@ -148,8 +146,6 @@ specula/
 | Embeddings | OpenAI `text-embedding-3-small` (1536-d) | Skill/role vectors; stored in pgvector. |
 | Discovery (seeding) | **OpenAI Responses API `web_search` tool** (domain-filterable), harvest `sources` URLs | Finds candidate companies/careers URLs; ingestion is separate. §5. |
 | Scraping (ingestion) | `httpx` + `selectolax`/`BeautifulSoup`; **Playwright** for JS-rendered career pages | Fetch + snapshot the actual postings. Politeness controls in §15. |
-| Object storage | S3-compatible (Cloudflare R2 or AWS S3) | Raw HTML snapshots (provenance/debug), company logos. |
-| Billing | **Stripe** (Customer + Subscription + Checkout + webhooks) | Entitlement checks server-side. |
 | Observability | Sentry (web + api), structured JSON logs, OpenTelemetry traces | §16. |
 | CI/CD | GitHub Actions → Vercel (web) + Fly/Render (api) | §16. |
 
@@ -173,9 +169,7 @@ create table users (
   id              uuid primary key default gen_random_uuid(),
   email           citext unique not null,
   name            text,
-  created_at      timestamptz not null default now(),
-  plan            text not null default 'free',          -- free | pro
-  stripe_customer_id text
+  created_at      timestamptz not null default now()
 );
 
 -- ── candidate profile (1:1 with user) ──────────────────────────────────
@@ -242,7 +236,6 @@ create table postings (
   company_id    uuid references companies(id) on delete set null,
   source        text not null,            -- 'scrape'
   source_url    text not null,
-  raw_snapshot_key text,                  -- object-storage key of fetched HTML
   content_hash  text not null,            -- for change-detection / dedup
   -- extracted insight record (LLM, schema-validated):
   title         text, role_family text,
@@ -363,6 +356,10 @@ for onboarding/empty-state previews and E2E tests — not as the app's data sour
 A **run** (scheduled or on-demand) executes this pipeline for one user. Each stage is an idempotent
 worker task; stages communicate via the queue and write to Postgres.
 
+> **Current status:** the pipeline runs on a **manual trigger only** (on-demand "Refresh now"),
+> executed inline. The **scheduled** weekly run described below, and the background-worker/queue/
+> hosting infra it needs, are **deferred to a later milestone** (§7).
+
 1. **Seed query generation.** For each active lens, combine `targeting.role_titles` (synonyms) +
    lens `seeds` + lens `scope` into a small set of natural-language discovery queries.
 2. **Company discovery via OpenAI web search.** Run those queries through the **OpenAI Responses
@@ -373,18 +370,20 @@ worker task; stages communicate via the queue and write to Postgres.
    companies' link graphs) into candidate companies. New companies are written to `approvals`
    (status `null`) with a `found_query` and an LLM-written `why`. **They do not enter the pool until
    the user approves** (§7.3). Approved companies are enriched (HQ country + confidence via
-   LLM+heuristics, logo, ATS detection).
+   LLM+heuristics, logo, ATS detection) — `logo_url` holds a favicon URL, not an object-storage
+   asset.
    - *Division of labor:* OpenAI **finds** (discovery/seeding only); Specula **fetches** (step 3).
-     We never rely on the model for full-page posting content — we fetch and snapshot it ourselves
-     so provenance and change-detection are under our control.
+     We never rely on the model for full-page posting content — we fetch it ourselves so
+     provenance and change-detection are under our control.
    - *Cost:* each search is a billable tool call; cap searches per run and cache by
      `(query, week)`.
 3. **Posting fetch.** For each tracked company, fetch its careers/ATS listing pages
-   (`httpx`; `Playwright` when JS-rendered). Store a raw HTML snapshot to object storage; compute
-   `content_hash`. Skip unchanged postings (hash hit) to control cost.
+   (`httpx`; `Playwright` when JS-rendered). Compute `content_hash` from the fetched HTML
+   (change-detection/dedup); do not persist raw HTML. Skip unchanged postings (hash hit) to control
+   cost.
 4. **Extraction (LLM, structured output).** Turn each new/changed posting into the insight record
    (§6.1). Validate against the Pydantic/JSON schema; on low confidence, **store but flag**
-   (`extraction_confidence < 75`) — surfaced in UI as "surfaced, not trusted," excluded from
+   (`extraction_confidence < 50`) — surfaced in UI as "surfaced, not trusted," excluded from
    Insights aggregates.
 5. **Dedup.** Cluster postings that are the same role across sources/lenses using
    `(company, normalized_title)` trigram match **and** cosine similarity of `title_vec`
@@ -392,15 +391,16 @@ worker task; stages communicate via the queue and write to Postgres.
 6. **Scoring (LLM-assisted, §6.2).** Compute `match`, the three factors, skill overlap, optional
    `red_flag`, and a one-sentence `rationale`. Persist to `scores` with `scored_with` (model +
    scoring version) for reproducibility.
-7. **Lifecycle upkeep.** Mark postings whose source 404s / disappears as `still_open=false`;
-   decrement company `open_roles`.
+7. **Lifecycle upkeep.** Mark postings whose source 404s / disappears as `still_open=false`; a
+   company's open-role count is **derived** from its still-open postings (no stored counter to
+   decrement).
 8. **Run finalize.** Write `runs.stats` (`{found, new, closed, low_conf_excluded, errors}`) and
    `finished_at`. The sidebar's "synced Nd ago · N new" reads the latest finished run.
 
 **[DECISION] Discovery uses OpenAI's built-in web search; ingestion is ours.** Seeds become URLs
 via the Responses API `web_search` tool (domain-filtered to ATS hosts where useful), harvesting the
 `sources` URL list — no separate Bing/SerpAPI contract needed in v1. The model only **discovers**;
-the actual posting fetch, raw-HTML snapshot, change-detection, and extraction (§6) remain in our
+the actual posting fetch, change-detection (`content_hash`), and extraction (§6) remain in our
 pipeline so we own provenance and cost. Keep the `pipeline/source` abstraction so an official ATS
 feed or alternate search provider can be swapped in later. Onboarding may still let users seed a few
 companies directly to bootstrap a cold account.
@@ -467,9 +467,13 @@ LOC bar, not the prose).
 
 ## 7. Background jobs & scheduling
 
-- **Scheduled runs:** one `scheduled` run per active user per week, **staggered** across the week by
-  hashing `user_id` (avoid thundering herd + smooth LLM/scrape spend). Skip dormant users (no login
-  in N weeks) to control cost; resume on next login.
+> **Current status:** the pipeline is **manual-trigger only** — on-demand "Refresh now", run inline.
+> **Scheduled runs (below) are deferred to a later milestone**, along with the background-worker/
+> queue and hosting infra this section assumes.
+
+- **Scheduled runs (deferred):** one `scheduled` run per active user per week, **staggered** across
+  the week by hashing `user_id` (avoid thundering herd + smooth LLM/scrape spend). Skip dormant users
+  (no login in N weeks) to control cost; resume on next login.
 - **On-demand "Refresh now":** enqueues an `on_demand` run for that user (rate-limited, e.g. ≤ a few
   per hour). The button's spin state maps to `runs.status` (`queued`/`running` → spinning;
   `done` → "just now"). UI polls run status (or subscribes via SSE) and refreshes lists on completion.
@@ -503,26 +507,19 @@ LOC bar, not the prose).
 | `GET /skills-gap` | Derived missing-skills vs target roles. |
 | `POST /runs` / `GET /runs/{id}` / `GET /runs/latest` | Trigger on-demand refresh; poll status; sidebar sync info. |
 | `GET /runs/stream` (SSE) | Live run progress (optional; polling fallback). |
-| Billing | `POST /billing/checkout`, `POST /webhooks/stripe` (on Vercel). |
 
 Mutations return the updated resource so the client can reconcile optimistic UI.
 
 ---
 
-## 9. Auth, multi-tenancy & billing
+## 9. Auth & multi-tenancy
 
-- **Auth.js (NextAuth v5)** on Vercel: email magic-link + Google OAuth. Sessions via secure,
-  httpOnly cookies. On sign-in, ensure a `users` row + empty `candidate_profiles`/`targeting`/default
-  `All` lens exist (idempotent bootstrap).
+- **Auth.js (NextAuth v5)** on Vercel: Google OAuth only. JWT (stateless) session (no DB adapter);
+  FastAPI owns the DB. Session via secure, httpOnly cookie. On sign-in, ensure a `users` row + empty
+  `candidate_profiles`/`targeting`/default `All` lens exist (idempotent bootstrap).
 - **Tenancy:** every domain query filtered by `user_id` in the data layer **and** guarded by RLS
   policies (`using (user_id = current_setting('app.user_id')::uuid)`). FastAPI sets
   `app.user_id` at the start of each request transaction from the validated service JWT.
-- **Entitlements:** a server-side `plan` → limits map (e.g. free: N tracked companies, weekly run
-  only, no on-demand; pro: more companies, on-demand refresh, longer history). Check entitlements in
-  the API, not the UI.
-- **Billing-ready (Stripe):** create a Stripe Customer at signup; Checkout for upgrade; persist
-  `stripe_customer_id` + subscription status via webhooks (handled on Vercel, then synced to Neon).
-  v1 may keep everyone on `free` with the plumbing live.
 
 ---
 
@@ -659,8 +656,8 @@ legal and getting-blocked risk. This is a set of *requirements*, not a reason to
   Greenhouse/Lever/Ashby, which expose clean JSON endpoints/APIs. Prefer those over HTML scraping
   when available — more reliable *and* friendlier. The `pipeline/source` abstraction lets each
   company resolve to "ATS feed if known, else scrape."
-- **Provenance:** store raw HTML snapshots (object storage) + `source_url` for every posting, so any
-  extracted field is auditable.
+- **Provenance:** store `source_url` + `content_hash` for every posting (no raw-HTML object
+  storage); fields are auditable via the source URL and re-fetch.
 - **Removal path:** provide a per-company opt-out so a company can be excluded on request.
 - **PII & data:** the only personal data is the user's own profile + their saved roles. Support
   **export** and **account deletion** (cascade deletes via FK). Encrypt secrets; never log raw API
@@ -691,12 +688,12 @@ legal and getting-blocked risk. This is a set of *requirements*, not a reason to
 
 ## 17. Environments & configuration
 
-- **Envs:** local (docker-compose: Postgres+pgvector, Redis, MinIO, FastAPI, Next), preview
+- **Envs:** local (docker-compose: Postgres+pgvector, Redis, FastAPI, Next), preview
   (Vercel preview + an api preview), production.
-- **Secrets:** `OPENAI_API_KEY`, `DATABASE_URL` (Neon pooled + direct), `REDIS_URL`, object-storage
-  creds, `AUTH_SECRET`/OAuth creds, `STRIPE_*`, `SERVICE_JWT_SECRET` (BFF↔API). Managed via Vercel
+- **Secrets:** `OPENAI_API_KEY`, `DATABASE_URL` (Neon pooled + direct), `REDIS_URL`,
+  `AUTH_SECRET`/OAuth creds, `SERVICE_JWT_SECRET` (BFF↔API). Managed via Vercel
   env + the container host's secrets; never in the repo.
-- **Config flags:** `SCORING_VERSION`, model tiers, crawl concurrency, run cadence, entitlement limits.
+- **Config flags:** `SCORING_VERSION`, model tiers, crawl concurrency, run cadence.
 
 ---
 
@@ -712,13 +709,18 @@ legal and getting-blocked risk. This is a set of *requirements*, not a reason to
 - **M2 — Persistence & tenancy.** Real schema + RLS; CRUD for lenses/candidate/targeting/companies;
   posting state (status/note/feedback) persists; tweaks persist. Demo seeder. *(§4, §8, §9.)*
 - **M3 — Discovery & approvals.** Crawl/fetch career pages → approval queue → approve→enrich→registry
-  → fetch postings + snapshots. On-demand + scheduled runs; sidebar sync + Refresh now wired to run
-  status. *(§5, §7.)*
+  → fetch postings (content_hash change-detection). On-demand "Refresh now" only; sidebar sync +
+  Refresh now wired to run status. *(§5, §7.)*
 - **M4 — Extraction & scoring.** OpenAI structured-output extraction → insight records; embeddings;
   dedup; hybrid salary-blind scoring + rationale; low-confidence handling; Insights aggregates from
   real data. *(§5–6.)*
-- **M5 — Billing-ready & hardening.** Stripe customer/subscription/entitlements; observability,
-  rate limits, scraping politeness, export/delete; E2E + load test; cost controls. *(§9, §15–16.)*
+
+  > **Current build note:** M3 and M4 are being built as ONE manually-triggered vertical slice —
+  > discovery → approval → enrich → crawl → extract → dedup → score → render — run inline on demand.
+  > A later milestone owns **automation**: the weekly scheduler and its background-worker/queue and
+  > hosting infra (§7).
+- **M5 — Hardening.** Observability, rate limits, scraping politeness, export/delete; E2E + load
+  test; cost controls. *(§15–16.)*
 - **M6 — Polish & launch.** Keyboard nav/a11y pass, onboarding (collect starting companies), empty/
   loading states, perf budget, security review.
 
@@ -744,11 +746,10 @@ legal and getting-blocked risk. This is a set of *requirements*, not a reason to
 - [ ] Scores are reproducible (`scoring_version` + `scored_with`); numbers are computed, rationale is
       generated.
 - [ ] Auth, account bootstrap, data export, and account deletion (cascade) all work.
-- [ ] Stripe customer/subscription plumbing live; entitlements enforced server-side.
 - [ ] Observability in place (logs/traces/errors + run & cost dashboards); CI deploys web→Vercel and
       api→container host with migrations; post-deploy smoke passes.
-- [ ] Scraping respects robots.txt + rate limits; snapshots stored for provenance; per-company removal
-      path exists.
+- [ ] Scraping respects robots.txt + rate limits; `source_url` + `content_hash` stored for
+      provenance; per-company removal path exists.
 
 ---
 
@@ -762,6 +763,6 @@ legal and getting-blocked risk. This is a set of *requirements*, not a reason to
    a per-company removal path is included.
 3. **Worker stack** — Arq (async, lighter) vs Celery (mature, heavier). Spec defaults to Arq.
 4. **Container host** — Fly.io (default) vs Railway/Render.
-5. **Run cadence & entitlements** — exact free/pro limits and weekly-run staggering policy.
+5. **Run cadence** — weekly-run staggering policy.
 6. **Drawer routing** — intercepting route `/jobs/{id}` (shareable URL) vs pure client overlay; affects
    how morph rects are passed (§13).

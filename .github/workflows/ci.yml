@@ -130,6 +130,14 @@ jobs:
           DATABASE_URL: postgresql+asyncpg://specula_app:specula@localhost:5432/specula
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm test:e2e
+      # The E2E suite triggers a run + mutates the demo user's data (latest run,
+      # approvals). Reseed so the visual suite captures the deterministic seeded
+      # state (sidebar "synced Nd ago · 7 new"), not whatever E2E left behind.
+      - name: Reseed before visual
+        working-directory: apps/api
+        run: uv run python -m specula_api.seed
+        env:
+          DATABASE_URL: postgresql+asyncpg://specula_app:specula@localhost:5432/specula
       # Pixel regression against the API-backed production build (own config, own
       # servers — a uvicorn + a next start). Committed Linux baselines are generated
       # by `just visual-update` (same Chromium + font stack + seeded data).

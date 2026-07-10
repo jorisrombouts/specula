@@ -3,17 +3,25 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
+import type { Run } from "@specula/shared-types";
 import { NAV, isActive, type NavItem } from "@/lib/nav";
 import { Icon } from "@/components/icon";
+import { SyncStatus } from "@/components/sync-status";
 
 type SidebarUser = { name?: string | null; email?: string | null };
 
-export function Sidebar({ user }: { user: SidebarUser }) {
+export function Sidebar({
+  user,
+  latestRun,
+}: {
+  user: SidebarUser;
+  latestRun: Run | null;
+}) {
   const pathname = usePathname();
 
   return (
     <aside className="flex flex-col overflow-hidden border-r border-rule bg-panel">
-      {/* Brand + inert sync/refresh */}
+      {/* Brand + sync/refresh */}
       <div className="border-b border-rule px-5 pb-4 pt-[22px]">
         <div className="flex items-baseline gap-2">
           <span className="font-display text-[23px] font-semibold tracking-[0.05em] text-ink">
@@ -23,21 +31,7 @@ export function Sidebar({ user }: { user: SidebarUser }) {
             role ledger
           </span>
         </div>
-        <div className="mt-[14px] flex flex-col gap-[9px]">
-          <div className="font-mono flex items-center gap-2 text-[11px] text-ink-2">
-            <span className="sync-dot relative h-[7px] w-[7px] flex-shrink-0 rounded-full bg-accent" />
-            synced <b className="font-semibold text-ink">—</b> ·{" "}
-            <b className="font-semibold text-ink">—</b> new
-          </div>
-          <button
-            type="button"
-            disabled
-            title="Available in a later milestone"
-            className="font-body mt-1 flex w-full items-center justify-center gap-[7px] rounded-[7px] bg-ink px-3 py-[9px] text-[12.5px] font-semibold text-paper opacity-60"
-          >
-            <span aria-hidden>↻</span> Refresh now
-          </button>
-        </div>
+        <SyncStatus initialRun={latestRun} />
       </div>
 
       {/* Nav */}

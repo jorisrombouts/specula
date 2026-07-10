@@ -1,0 +1,6 @@
+{
+  "url": "https://www.acmecorp.example/careers",
+  "status": 200,
+  "text": "<html><body><nav><a href=\"/about\">About</a></nav><main><h1>Open Roles</h1><ul><li><a href=\"https://boards.greenhouse.io/acmecorp/jobs/4123456\">Senior Backend Engineer</a></li><li><a href=\"/careers/openings/platform-pm\">Product Manager, Platform</a></li></ul><footer><a href=\"https://twitter.com/acmecorp\">Follow us on Twitter</a></footer></main></body></html>",
+  "content_type": "text/html"
+}

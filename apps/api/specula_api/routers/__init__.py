@@ -7,6 +7,7 @@ from specula_api.routers import (
     insights,
     jobs,
     lenses,
+    run,
     targeting,
     tweaks,
 )
@@ -18,5 +19,6 @@ api_router.include_router(company.router)
 api_router.include_router(insights.router)
 api_router.include_router(jobs.router)
 api_router.include_router(lenses.router)
+api_router.include_router(run.router)
 api_router.include_router(targeting.router)
 api_router.include_router(tweaks.router)
