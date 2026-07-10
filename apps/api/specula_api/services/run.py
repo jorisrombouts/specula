@@ -10,6 +10,7 @@ from specula_api.db.session import tenant_session
 from specula_api.pipeline.deps import PipelineDeps, build_deps
 from specula_api.pipeline.discovery import discover
 from specula_api.pipeline.enrich import enrich_company
+from specula_api.pipeline.fetch import fetch_postings
 from specula_api.pipeline.openai_client import EnrichResult
 from specula_api.pipeline.util import favicon_url
 
@@ -113,8 +114,8 @@ async def ingest_company(
     enriched = await enrich_company(company, deps)
     _apply_enrichment(company, enriched)
     await session.flush()
-    # TODO(fetch task): await fetch_postings(session, user_id, company, deps)  # then per posting
-    # extract→embed→dedup→score
+    await fetch_postings(session, user_id, company, deps)
+    # TODO(extract/score tasks): per new posting extract→embed→dedup→score
 
 
 async def trigger_company_ingest(user_id: UUID, company_id: UUID) -> None:
