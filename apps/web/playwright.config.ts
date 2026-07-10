@@ -39,6 +39,11 @@ export default defineConfig({
       env: {
         SERVICE_JWT_SECRET: E2E_SERVICE_JWT_SECRET,
         DATABASE_URL: E2E_DATABASE_URL,
+        // A triggered run (authed/refresh.spec.ts) must complete without live
+        // OpenAI/network calls — "recorded" replays fixtures instead. No
+        // PIPELINE_FIXTURES_DIR override: build_deps' default already points at
+        // apps/api/tests/fixtures/pipeline.
+        PIPELINE_MODE: "recorded",
       },
     },
     {
