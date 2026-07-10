@@ -13,6 +13,10 @@ export const test = base.extend<{ stablePage: Page }>({
       }
     });
     await page.emulateMedia({ reducedMotion: "reduce" });
+    // Pin the clock so the sidebar's relative "synced Nd ago" is deterministic.
+    // The seeded demo run finished 2026-07-05T08:03Z; a fixed 2026-07-08 renders a
+    // stable "3d ago" (the SyncStatus relative-time nodes are client-clock-derived).
+    await page.clock.setFixedTime(new Date("2026-07-08T08:03:00Z"));
     await use(page);
   },
 });
