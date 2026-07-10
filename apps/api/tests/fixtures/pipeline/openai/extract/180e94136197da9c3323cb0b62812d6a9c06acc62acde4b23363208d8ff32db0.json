@@ -1,0 +1,25 @@
+{
+  "title": "Senior Backend Engineer",
+  "role_family": "Backend Engineering",
+  "city": "Berlin",
+  "country": "DE",
+  "hq_country": "US",
+  "work_mode": "hybrid",
+  "seniority": "senior",
+  "education": null,
+  "required_skills": ["Python", "PostgreSQL", "Distributed Systems"],
+  "nice_to_have": ["Kubernetes", "Kafka"],
+  "visa": "sponsorship available",
+  "languages": ["English"],
+  "contract": "full-time",
+  "geo": "EU",
+  "salary_text": null,
+  "deadline_at": "2026-08-15",
+  "posted_at": null,
+  "responsibilities": [
+    "Design and operate distributed systems in Python and Go",
+    "Partner with the platform team on service architecture"
+  ],
+  "summary": "Senior backend role at Acme Corp building distributed systems in Berlin (hybrid).",
+  "extraction_confidence": 82
+}
