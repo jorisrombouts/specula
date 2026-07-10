@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from test_db import requires_db
 
 from specula_api.config import Settings
-from specula_api.db.models import Company
+from specula_api.db.models import Company, Posting
 from specula_api.pipeline.deps import PipelineDeps
 from specula_api.pipeline.enrich import enrich_company
 from specula_api.pipeline.http import FetchedDoc
@@ -32,8 +32,11 @@ class _StubFetcher:
 class _StubOpenAI:
     """Hand-built OpenAIClient stub — see tests/test_discovery.py for why."""
 
-    def __init__(self, result: EnrichResult) -> None:
+    def __init__(
+        self, result: EnrichResult, *, extract_result: ExtractionResult | None = None
+    ) -> None:
         self._result = result
+        self._extract_result = extract_result
         self.calls: list[dict[str, object]] = []
 
     async def discover_sources(
@@ -50,10 +53,12 @@ class _StubOpenAI:
     async def extract_posting(
         self, *, page_text: str, company_name: str | None = None
     ) -> ExtractionResult:
-        raise NotImplementedError
+        if self._extract_result is None:
+            raise NotImplementedError
+        return self._extract_result
 
     async def embed(self, texts: Sequence[str]) -> list[list[float]]:
-        raise NotImplementedError
+        return [[0.1] * 1536 for _ in texts]
 
     async def rationale(
         self, *, factors: dict[str, int], overlap: tuple[int, int], red_flag: str | None
@@ -222,3 +227,43 @@ async def test_ingest_company_is_noop_for_non_owned_company(db_session: AsyncSes
     refreshed = await db_session.get(Company, company_id)
     assert refreshed is not None
     assert refreshed.hq_country is None
+
+
+@requires_db
+async def test_ingest_company_extracts_and_embeds_shell_postings_after_fetch(
+    db_session: AsyncSession,
+) -> None:
+    user = await make_user(db_session)
+    await set_tenant(db_session, user.id)
+    company = Company(user_id=user.id, name="Acme", domain="acme.com")
+    db_session.add(company)
+    await db_session.flush()
+    company_id = company.id
+
+    shell = Posting(
+        user_id=user.id,
+        company_id=company.id,
+        source="scrape",
+        source_url="https://acme.com/jobs/1",
+        content_hash="shell-1",
+    )
+    db_session.add(shell)
+    await db_session.flush()
+    shell_id = shell.id
+
+    extract_result = ExtractionResult(
+        title="Senior Backend Engineer", required_skills=["Python"], extraction_confidence=80
+    )
+    openai = _StubOpenAI(EnrichResult(), extract_result=extract_result)
+    fetcher = _StubFetcher(FetchedDoc(url="https://acme.com/jobs/1", status=200, text="job text"))
+
+    await ingest_company(db_session, user.id, company_id, _deps(openai, fetcher))
+
+    refreshed = await db_session.get(Posting, shell_id)
+    assert refreshed is not None
+    assert refreshed.title == "Senior Backend Engineer"
+    assert refreshed.extraction_confidence == 80
+    assert refreshed.title_vec is not None
+    assert len(refreshed.title_vec) == 1536
+    assert refreshed.skills_vec is not None
+    assert len(refreshed.skills_vec) == 1536

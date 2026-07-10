@@ -5,11 +5,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from specula_api.config import settings
-from specula_api.db.models import Company, Run
+from specula_api.db.models import Company, Posting, Run
 from specula_api.db.session import tenant_session
 from specula_api.pipeline.deps import PipelineDeps, build_deps
 from specula_api.pipeline.discovery import discover
+from specula_api.pipeline.embeddings import embed_posting
 from specula_api.pipeline.enrich import enrich_company
+from specula_api.pipeline.extract import extract_posting
 from specula_api.pipeline.fetch import fetch_postings
 from specula_api.pipeline.openai_client import EnrichResult
 from specula_api.pipeline.util import favicon_url
@@ -115,7 +117,19 @@ async def ingest_company(
     _apply_enrichment(company, enriched)
     await session.flush()
     await fetch_postings(session, user_id, company, deps)
-    # TODO(extract/score tasks): per new posting extract→embed→dedup→score
+
+    needing_extraction = await session.scalars(
+        select(Posting).where(
+            Posting.company_id == company.id,
+            Posting.user_id == user_id,
+            Posting.title.is_(None),
+        )
+    )
+    for posting in needing_extraction:
+        await extract_posting(session, posting, deps)
+        if posting.title and posting.extraction_confidence:
+            await embed_posting(posting, deps)
+    # TODO(dedup/score tasks): dedup + score each extracted posting
 
 
 async def trigger_company_ingest(user_id: UUID, company_id: UUID) -> None:
