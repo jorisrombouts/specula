@@ -13,6 +13,9 @@ dependencies = [
     "asyncpg>=0.29",
     "pgvector>=0.3",
     "pyjwt>=2.9",
+    "httpx>=0.28",
+    "openai>=1.40",
+    "selectolax>=0.3",
 ]
 
 [dependency-groups]
@@ -20,8 +23,8 @@ dev = [
     "ruff>=0.8",
     "mypy>=1.13",
     "pytest>=8.3",
-    "httpx>=0.28",
     "pytest-asyncio>=0.24",
+    "respx>=0.21",
 ]
 
 [build-system]
@@ -49,3 +52,7 @@ exclude = ["^alembic/"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+addopts = "-m \"not live\""
+markers = [
+    "live: hits real external services (OpenAI, ATS sources); excluded by default",
+]
