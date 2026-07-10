@@ -1,0 +1,25 @@
+{
+  "jobs": [
+    {
+      "id": 4123456,
+      "title": "Senior Backend Engineer",
+      "absolute_url": "https://boards.greenhouse.io/acme/jobs/4123456",
+      "location": { "name": "Remote" },
+      "updated_at": "2026-06-01T12:00:00-05:00"
+    },
+    {
+      "id": 4123457,
+      "title": "Product Manager, Platform",
+      "absolute_url": "https://boards.greenhouse.io/acme/jobs/4123457",
+      "location": { "name": "New York, NY" },
+      "updated_at": "2026-06-02T09:30:00-05:00"
+    },
+    {
+      "id": 4123458,
+      "title": "Staff Data Scientist",
+      "absolute_url": "https://boards.greenhouse.io/acme/jobs/4123458",
+      "location": { "name": "San Francisco, CA" },
+      "updated_at": "2026-06-03T14:15:00-05:00"
+    }
+  ]
+}

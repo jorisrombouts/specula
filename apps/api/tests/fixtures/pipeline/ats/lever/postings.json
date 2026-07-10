@@ -1,0 +1,16 @@
+[
+  {
+    "id": "5f2b1e2a-1111-4a2b-9c3d-abcdef123456",
+    "text": "Software Engineer, Infrastructure",
+    "hostedUrl": "https://jobs.lever.co/acme/5f2b1e2a-1111-4a2b-9c3d-abcdef123456",
+    "categories": { "location": "Remote - US", "team": "Engineering" },
+    "createdAt": 1717200000000
+  },
+  {
+    "id": "6a3c2f3b-2222-4b3c-9d4e-bcdef2345678",
+    "text": "Growth Marketing Lead",
+    "hostedUrl": "https://jobs.lever.co/acme/6a3c2f3b-2222-4b3c-9d4e-bcdef2345678",
+    "categories": { "location": "London, UK", "team": "Marketing" },
+    "createdAt": 1717286400000
+  }
+]
