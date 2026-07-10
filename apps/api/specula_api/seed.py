@@ -35,6 +35,7 @@ from specula_api.db.models import (
     UserSettings,
 )
 from specula_api.db.session import async_session
+from specula_api.pipeline.util import favicon_url
 
 DEMO_GOOGLE_SUB = "demo-user"
 DEMO_EMAIL = "demo@specula.app"
@@ -53,10 +54,6 @@ _TENANT_TABLES = [
     CandidateProfile,
     UserSettings,
 ]
-
-
-def _favicon(domain: str) -> str:
-    return f"https://icons.duckduckgo.com/ip3/{domain}.ico"
 
 
 # Companies from data.ts's `companies` (mistral..wayve) plus three synthesized for
@@ -1001,7 +998,7 @@ async def seed(session: AsyncSession) -> None:
 
     # Companies, ported from data.ts's `companies` (+ 3 synthesized — see _COMPANIES).
     companies = {
-        key: Company(user_id=uid, logo_url=_favicon(fields["domain"]), **fields)
+        key: Company(user_id=uid, logo_url=favicon_url(fields["domain"]), **fields)
         for key, fields in _COMPANIES.items()
     }
     session.add_all(companies.values())
@@ -1073,7 +1070,7 @@ async def seed(session: AsyncSession) -> None:
     session.add_all(
         Approval(
             user_id=uid,
-            logo_url=_favicon(fields["domain"]),
+            logo_url=favicon_url(fields["domain"]),
             decision=None,
             **fields,
         )

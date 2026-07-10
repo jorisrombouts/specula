@@ -7,6 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from specula_api.config import settings
 from specula_api.db.models import Run
 from specula_api.db.session import tenant_session
+from specula_api.pipeline.deps import PipelineDeps, build_deps
+from specula_api.pipeline.discovery import discover
 
 
 async def create_run(session: AsyncSession, user_id: UUID, kind: str = "on_demand") -> Run:
@@ -39,12 +41,9 @@ async def finalize_run(
     await session.flush()
 
 
-async def _discover_stub(session: AsyncSession, user_id: UUID, run_id: UUID) -> dict[str, object]:
-    # TODO(discover task): replace with pipeline.discovery.discover
-    return {"found": 0, "new": 0, "closed": 0, "low_conf_excluded": 0, "errors": 0}
-
-
-async def run_discovery(session: AsyncSession, user_id: UUID, run_id: UUID) -> None:
+async def run_discovery(
+    session: AsyncSession, user_id: UUID, run_id: UUID, deps: PipelineDeps
+) -> None:
     run = await get_run(session, user_id, run_id)
     if run is None:
         return
@@ -54,7 +53,14 @@ async def run_discovery(session: AsyncSession, user_id: UUID, run_id: UUID) -> N
     await session.flush()
 
     try:
-        stats = await _discover_stub(session, user_id, run_id)
+        result = await discover(session, user_id, run_id, deps)
+        stats: dict[str, object] = {
+            "found": result.found,
+            "new": result.new,
+            "closed": 0,
+            "low_conf_excluded": 0,
+            "errors": result.errors,
+        }
         await finalize_run(session, run, stats, status="done")
     except Exception:
         await finalize_run(
@@ -68,8 +74,12 @@ async def run_discovery(session: AsyncSession, user_id: UUID, run_id: UUID) -> N
 
 async def trigger_discovery_run(user_id: UUID, run_id: UUID) -> None:
     if settings.pipeline_execution == "inline":
-        async with tenant_session(user_id) as session:
-            await run_discovery(session, user_id, run_id)
+        deps = build_deps(settings)
+        try:
+            async with tenant_session(user_id) as session:
+                await run_discovery(session, user_id, run_id, deps)
+        finally:
+            await deps.aclose()
     else:
         # TODO(scheduler milestone): enqueue to Arq
         pass
