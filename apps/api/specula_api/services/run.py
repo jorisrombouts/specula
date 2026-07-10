@@ -5,8 +5,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from specula_api.config import settings
-from specula_api.db.models import Company, Posting, Run
+from specula_api.db.models import CandidateProfile, Company, Posting, Run, Targeting
 from specula_api.db.session import tenant_session
+from specula_api.pipeline.dedup import dedup_company
 from specula_api.pipeline.deps import PipelineDeps, build_deps
 from specula_api.pipeline.discovery import discover
 from specula_api.pipeline.embeddings import embed_posting
@@ -14,6 +15,7 @@ from specula_api.pipeline.enrich import enrich_company
 from specula_api.pipeline.extract import extract_posting
 from specula_api.pipeline.fetch import fetch_postings
 from specula_api.pipeline.openai_client import EnrichResult
+from specula_api.pipeline.score import ensure_candidate_vectors, score_posting
 from specula_api.pipeline.util import favicon_url
 
 
@@ -129,7 +131,27 @@ async def ingest_company(
         await extract_posting(session, posting, deps)
         if posting.title and posting.extraction_confidence:
             await embed_posting(posting, deps)
-    # TODO(dedup/score tasks): dedup + score each extracted posting
+
+    await dedup_company(session, user_id, company.id)
+
+    candidate = await session.get(CandidateProfile, user_id)
+    targeting = await session.get(Targeting, user_id)
+    if candidate is None or targeting is None:
+        return
+
+    await ensure_candidate_vectors(session, candidate, deps)
+    [role_titles_vec] = await deps.openai.embed([" ".join(targeting.role_titles)])
+
+    scorable = await session.scalars(
+        select(Posting).where(
+            Posting.company_id == company.id,
+            Posting.user_id == user_id,
+            Posting.title.is_not(None),
+            Posting.extraction_confidence >= 1,
+        )
+    )
+    for posting in scorable:
+        await score_posting(session, user_id, posting, candidate, targeting, role_titles_vec, deps)
 
 
 async def trigger_company_ingest(user_id: UUID, company_id: UUID) -> None:

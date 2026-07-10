@@ -1,0 +1,592 @@
+from collections.abc import Sequence
+from datetime import UTC, datetime
+from pathlib import Path
+from uuid import UUID, uuid4
+
+from conftest import make_user, set_tenant
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from test_db import requires_db
+
+from specula_api.config import Settings
+from specula_api.db.models import (
+    CandidateProfile,
+    Company,
+    Posting,
+    Score,
+    SkillsTaxonomy,
+    Targeting,
+)
+from specula_api.pipeline.deps import PipelineDeps
+from specula_api.pipeline.embeddings import embed_posting
+from specula_api.pipeline.http import FetchedDoc
+from specula_api.pipeline.openai_client import (
+    EnrichResult,
+    ExtractionResult,
+    RecordedOpenAIClient,
+    Source,
+)
+from specula_api.pipeline.score import cosine, ensure_candidate_vectors, score_posting
+from specula_api.services.jobs import get_job
+from specula_api.services.run import ingest_company
+
+FIXTURES_DIR = Path(__file__).parent / "fixtures" / "pipeline"
+
+
+class _EchoingOpenAI:
+    """Hand-built OpenAIClient stub: `embed` delegates to RecordedOpenAIClient's
+    deterministic pseudo-vector fallback (no per-string fixtures needed), and
+    `rationale` echoes the computed factors/overlap/red_flag verbatim so tests can
+    assert the prose is DERIVED FROM the numbers, never the reverse."""
+
+    def __init__(self) -> None:
+        self._recorded = RecordedOpenAIClient(FIXTURES_DIR)
+        self.rationale_calls: list[dict[str, object]] = []
+
+    async def discover_sources(
+        self, queries: Sequence[str], *, allowed_domains: Sequence[str] | None = None
+    ) -> list[Source]:
+        raise NotImplementedError
+
+    async def enrich_company(
+        self, *, name: str, domain: str | None, page_text: str | None
+    ) -> EnrichResult:
+        raise NotImplementedError
+
+    async def extract_posting(
+        self, *, page_text: str, company_name: str | None = None
+    ) -> ExtractionResult:
+        raise NotImplementedError
+
+    async def embed(self, texts: Sequence[str]) -> list[list[float]]:
+        return await self._recorded.embed(texts)
+
+    async def rationale(
+        self, *, factors: dict[str, int], overlap: tuple[int, int], red_flag: str | None
+    ) -> str:
+        self.rationale_calls.append(
+            {"factors": dict(factors), "overlap": overlap, "red_flag": red_flag}
+        )
+        return (
+            f"role={factors['role']} skill={factors['skill']} "
+            f"overlap={overlap[0]}/{overlap[1]} red_flag={red_flag or 'none'}"
+        )
+
+    async def aclose(self) -> None:
+        return None
+
+
+def _deps(openai: _EchoingOpenAI) -> PipelineDeps:
+    return PipelineDeps(
+        openai=openai,
+        fetcher=_UnusedFetcher(),
+        settings=Settings(),
+        now=lambda: datetime(2026, 7, 5, tzinfo=UTC),
+    )
+
+
+class _UnusedFetcher:
+    """score_posting/ensure_candidate_vectors never touch the fetcher."""
+
+    async def get(self, url: str, *, accept: str = "text/html") -> FetchedDoc:
+        raise NotImplementedError
+
+    async def aclose(self) -> None:
+        return None
+
+
+async def _make_candidate(
+    session: AsyncSession, user_id: UUID, *, skills: list[str]
+) -> CandidateProfile:
+    candidate = CandidateProfile(user_id=user_id, skills=skills)
+    session.add(candidate)
+    await session.flush()
+    return candidate
+
+
+async def _make_targeting(
+    session: AsyncSession,
+    user_id: UUID,
+    *,
+    role_titles: list[str],
+    seniority: list[str] | None = None,
+    must_haves: list[str] | None = None,
+) -> Targeting:
+    targeting = Targeting(
+        user_id=user_id,
+        role_titles=role_titles,
+        seniority=seniority or [],
+        must_haves=must_haves or [],
+    )
+    session.add(targeting)
+    await session.flush()
+    return targeting
+
+
+async def _make_posting(
+    session: AsyncSession,
+    user_id: UUID,
+    *,
+    title: str,
+    required_skills: list[str],
+    seniority: str | None = None,
+    salary_text: str | None = None,
+    extraction_confidence: int = 90,
+) -> Posting:
+    external_id = uuid4()
+    posting = Posting(
+        user_id=user_id,
+        source="scrape",
+        source_url=f"https://acme.com/jobs/{external_id}",
+        content_hash=f"hash-{external_id}",
+        title=title,
+        required_skills=required_skills,
+        seniority=seniority,
+        salary_text=salary_text,
+        extraction_confidence=extraction_confidence,
+    )
+    session.add(posting)
+    await session.flush()
+    return posting
+
+
+async def _role_titles_vec(deps: PipelineDeps, targeting: Targeting) -> list[float]:
+    [vec] = await deps.openai.embed([" ".join(targeting.role_titles)])
+    return vec
+
+
+async def _score(
+    session: AsyncSession,
+    user_id: UUID,
+    posting: Posting,
+    candidate: CandidateProfile,
+    targeting: Targeting,
+    deps: PipelineDeps,
+) -> Score:
+    """Prep vectors the way `ingest_company` does, then call `score_posting`."""
+    await embed_posting(posting, deps)
+    await ensure_candidate_vectors(session, candidate, deps)
+    role_titles_vec = await _role_titles_vec(deps, targeting)
+    return await score_posting(
+        session, user_id, posting, candidate, targeting, role_titles_vec, deps
+    )
+
+
+# --- cosine (pure) ------------------------------------------------------------------
+
+
+class TestCosine:
+    def test_identical_vectors_is_one(self) -> None:
+        assert cosine([1.0, 0.0], [1.0, 0.0]) == 1.0
+
+    def test_orthogonal_vectors_is_zero(self) -> None:
+        assert cosine([1.0, 0.0], [0.0, 1.0]) == 0.0
+
+    def test_opposite_vectors_is_negative_one(self) -> None:
+        assert cosine([1.0, 0.0], [-1.0, 0.0]) == -1.0
+
+    def test_either_none_is_zero(self) -> None:
+        assert cosine(None, [1.0, 0.0]) == 0.0
+        assert cosine([1.0, 0.0], None) == 0.0
+        assert cosine(None, None) == 0.0
+
+    def test_zero_vector_is_zero_not_a_division_error(self) -> None:
+        assert cosine([0.0, 0.0], [1.0, 0.0]) == 0.0
+
+
+# --- ensure_candidate_vectors ---------------------------------------------------------
+
+
+@requires_db
+async def test_ensure_candidate_vectors_sets_when_null(db_session: AsyncSession) -> None:
+    user = await make_user(db_session)
+    await set_tenant(db_session, user.id)
+    candidate = await _make_candidate(db_session, user.id, skills=["Python", "PyTorch"])
+    assert candidate.skills_vec is None
+
+    await ensure_candidate_vectors(db_session, candidate, _deps(_EchoingOpenAI()))
+
+    assert candidate.skills_vec is not None
+    assert len(candidate.skills_vec) == 1536
+
+
+@requires_db
+async def test_ensure_candidate_vectors_noop_when_already_set(db_session: AsyncSession) -> None:
+    user = await make_user(db_session)
+    await set_tenant(db_session, user.id)
+    candidate = await _make_candidate(db_session, user.id, skills=["Python"])
+    deps = _deps(_EchoingOpenAI())
+    await ensure_candidate_vectors(db_session, candidate, deps)
+    first_vec = candidate.skills_vec
+
+    await ensure_candidate_vectors(db_session, candidate, deps)
+
+    assert candidate.skills_vec == first_vec
+
+
+@requires_db
+async def test_ensure_candidate_vectors_noop_when_no_skills(db_session: AsyncSession) -> None:
+    user = await make_user(db_session)
+    await set_tenant(db_session, user.id)
+    candidate = await _make_candidate(db_session, user.id, skills=[])
+
+    await ensure_candidate_vectors(db_session, candidate, _deps(_EchoingOpenAI()))
+
+    assert candidate.skills_vec is None
+
+
+# --- score_posting ----------------------------------------------------------------
+
+
+@requires_db
+async def test_score_posting_computes_overlap_and_factors_in_range(
+    db_session: AsyncSession,
+) -> None:
+    user = await make_user(db_session)
+    await set_tenant(db_session, user.id)
+    candidate = await _make_candidate(db_session, user.id, skills=["Python", "PyTorch", "AWS"])
+    targeting = await _make_targeting(
+        db_session, user.id, role_titles=["ML Engineer"], seniority=["Senior"]
+    )
+    posting = await _make_posting(
+        db_session,
+        user.id,
+        title="Senior ML Engineer",
+        required_skills=["Python", "PyTorch", "Kubernetes"],
+        seniority="Senior",
+    )
+
+    score = await _score(
+        db_session, user.id, posting, candidate, targeting, _deps(_EchoingOpenAI())
+    )
+
+    assert score.overlap_matched == 2  # Python, PyTorch
+    assert score.overlap_total == 3  # Python, PyTorch, Kubernetes
+    assert 0 <= score.factor_role <= 100
+    assert 0 <= score.factor_skill <= 100
+    assert score.user_id == posting.user_id  # never from client input
+
+
+@requires_db
+async def test_score_posting_is_deterministic_across_runs(db_session: AsyncSession) -> None:
+    user = await make_user(db_session)
+    await set_tenant(db_session, user.id)
+    candidate = await _make_candidate(db_session, user.id, skills=["Python", "PyTorch"])
+    targeting = await _make_targeting(db_session, user.id, role_titles=["ML Engineer"])
+    posting = await _make_posting(
+        db_session, user.id, title="ML Engineer", required_skills=["Python", "PyTorch"]
+    )
+    deps = _deps(_EchoingOpenAI())
+    await embed_posting(posting, deps)
+    await ensure_candidate_vectors(db_session, candidate, deps)
+    role_titles_vec = await _role_titles_vec(deps, targeting)
+
+    first = await score_posting(
+        db_session, user.id, posting, candidate, targeting, role_titles_vec, deps
+    )
+    first_role, first_skill = first.factor_role, first.factor_skill
+
+    second = await score_posting(
+        db_session, user.id, posting, candidate, targeting, role_titles_vec, deps
+    )
+
+    assert second.factor_role == first_role
+    assert second.factor_skill == first_skill
+
+
+@requires_db
+async def test_score_posting_uses_taxonomy_aliases_for_overlap(db_session: AsyncSession) -> None:
+    user = await make_user(db_session)
+    await set_tenant(db_session, user.id)
+    # Unique canonical/alias per run — skills_taxonomy is a GLOBAL unscoped table (no
+    # per-test RLS isolation from other committed data, e.g. the demo seeder), so a
+    # fixed name like "python" could collide with a real row.
+    canonical = f"kubernetes-{uuid4()}"
+    alias = f"k8s-{uuid4()}"
+    db_session.add(SkillsTaxonomy(canonical=canonical, aliases=[alias]))
+    await db_session.flush()
+    candidate = await _make_candidate(db_session, user.id, skills=[alias])  # alias, not canonical
+    targeting = await _make_targeting(db_session, user.id, role_titles=["ML Engineer"])
+    posting = await _make_posting(
+        db_session, user.id, title="ML Engineer", required_skills=[canonical]
+    )
+
+    score = await _score(
+        db_session, user.id, posting, candidate, targeting, _deps(_EchoingOpenAI())
+    )
+
+    assert score.overlap_matched == 1
+    assert score.overlap_total == 1
+
+
+@requires_db
+async def test_score_posting_sets_red_flag_when_must_have_missing(
+    db_session: AsyncSession,
+) -> None:
+    user = await make_user(db_session)
+    await set_tenant(db_session, user.id)
+    candidate = await _make_candidate(db_session, user.id, skills=["Python"])
+    targeting = await _make_targeting(
+        db_session, user.id, role_titles=["ML Engineer"], must_haves=["Python", "Kubernetes"]
+    )
+    posting = await _make_posting(
+        db_session, user.id, title="ML Engineer", required_skills=["Python"]
+    )
+
+    score = await _score(
+        db_session, user.id, posting, candidate, targeting, _deps(_EchoingOpenAI())
+    )
+
+    assert score.red_flag == "Missing must-have: Kubernetes"
+
+
+@requires_db
+async def test_score_posting_red_flag_none_when_all_must_haves_present(
+    db_session: AsyncSession,
+) -> None:
+    user = await make_user(db_session)
+    await set_tenant(db_session, user.id)
+    candidate = await _make_candidate(db_session, user.id, skills=["Python"])
+    targeting = await _make_targeting(
+        db_session, user.id, role_titles=["ML Engineer"], must_haves=["Python"]
+    )
+    posting = await _make_posting(
+        db_session, user.id, title="ML Engineer", required_skills=["Python", "Kubernetes"]
+    )
+
+    score = await _score(
+        db_session, user.id, posting, candidate, targeting, _deps(_EchoingOpenAI())
+    )
+
+    assert score.red_flag is None
+
+
+@requires_db
+async def test_score_posting_never_sets_the_low_skill_read_model_flag(
+    db_session: AsyncSession,
+) -> None:
+    """Near-zero skill overlap must NOT set red_flag here — services/jobs.py::score_match
+    owns the '<45'-skill flag and cap at read time."""
+    user = await make_user(db_session)
+    await set_tenant(db_session, user.id)
+    candidate = await _make_candidate(db_session, user.id, skills=["Excel"])
+    targeting = await _make_targeting(db_session, user.id, role_titles=["ML Engineer"])
+    posting = await _make_posting(
+        db_session,
+        user.id,
+        title="ML Engineer",
+        required_skills=["Python", "PyTorch", "Kubernetes", "Ray"],
+    )
+
+    score = await _score(
+        db_session, user.id, posting, candidate, targeting, _deps(_EchoingOpenAI())
+    )
+
+    assert score.overlap_matched == 0
+    assert score.red_flag is None
+
+
+@requires_db
+async def test_score_posting_is_salary_blind(db_session: AsyncSession) -> None:
+    user = await make_user(db_session)
+    await set_tenant(db_session, user.id)
+    candidate = await _make_candidate(db_session, user.id, skills=["Python", "PyTorch"])
+    targeting = await _make_targeting(db_session, user.id, role_titles=["ML Engineer"])
+    posting = await _make_posting(
+        db_session,
+        user.id,
+        title="ML Engineer",
+        required_skills=["Python", "PyTorch"],
+        salary_text="$50k",
+    )
+    deps = _deps(_EchoingOpenAI())
+    await embed_posting(posting, deps)
+    await ensure_candidate_vectors(db_session, candidate, deps)
+    role_titles_vec = await _role_titles_vec(deps, targeting)
+
+    low = await score_posting(
+        db_session, user.id, posting, candidate, targeting, role_titles_vec, deps
+    )
+    low_factors = (low.factor_role, low.factor_skill, low.overlap_matched, low.overlap_total)
+
+    posting.salary_text = "$500k"  # wildly different — must not move any factor
+    high = await score_posting(
+        db_session, user.id, posting, candidate, targeting, role_titles_vec, deps
+    )
+    high_factors = (high.factor_role, high.factor_skill, high.overlap_matched, high.overlap_total)
+
+    assert high_factors == low_factors
+
+
+@requires_db
+async def test_score_posting_rationale_is_generated_from_computed_factors(
+    db_session: AsyncSession,
+) -> None:
+    user = await make_user(db_session)
+    await set_tenant(db_session, user.id)
+    candidate = await _make_candidate(db_session, user.id, skills=["Python", "PyTorch"])
+    targeting = await _make_targeting(db_session, user.id, role_titles=["ML Engineer"])
+    posting = await _make_posting(
+        db_session, user.id, title="ML Engineer", required_skills=["Python", "PyTorch"]
+    )
+    openai = _EchoingOpenAI()
+
+    score = await _score(db_session, user.id, posting, candidate, targeting, _deps(openai))
+
+    assert score.rationale != ""
+    assert openai.rationale_calls == [
+        {
+            "factors": {"role": score.factor_role, "skill": score.factor_skill},
+            "overlap": (score.overlap_matched, score.overlap_total),
+            "red_flag": score.red_flag,
+        }
+    ]
+    assert score.rationale == (
+        f"role={score.factor_role} skill={score.factor_skill} "
+        f"overlap={score.overlap_matched}/{score.overlap_total} red_flag=none"
+    )
+
+
+@requires_db
+async def test_score_posting_upsert_is_idempotent(db_session: AsyncSession) -> None:
+    user = await make_user(db_session)
+    await set_tenant(db_session, user.id)
+    candidate = await _make_candidate(db_session, user.id, skills=["Python"])
+    targeting = await _make_targeting(db_session, user.id, role_titles=["ML Engineer"])
+    posting = await _make_posting(
+        db_session, user.id, title="ML Engineer", required_skills=["Python", "PyTorch"]
+    )
+    deps = _deps(_EchoingOpenAI())
+    await embed_posting(posting, deps)
+    await ensure_candidate_vectors(db_session, candidate, deps)
+    role_titles_vec = await _role_titles_vec(deps, targeting)
+
+    first = await score_posting(
+        db_session, user.id, posting, candidate, targeting, role_titles_vec, deps
+    )
+    assert first.overlap_matched == 1
+
+    # Candidate profile changes -> re-scoring must UPDATE, not duplicate, the row.
+    candidate.skills = ["Python", "PyTorch"]
+    candidate.skills_vec = None
+    await ensure_candidate_vectors(db_session, candidate, deps)
+    updated = await score_posting(
+        db_session, user.id, posting, candidate, targeting, role_titles_vec, deps
+    )
+
+    rows = (await db_session.scalars(select(Score).where(Score.posting_id == posting.id))).all()
+    assert len(rows) == 1
+    assert rows[0].overlap_matched == updated.overlap_matched == 2
+
+
+# --- ingest_company wiring (optional integration check) ---------------------------
+
+
+class _FullStubOpenAI:
+    """Hand-built OpenAIClient stub exercising the whole ingest_company pipeline:
+    fixed enrich/extract results, deterministic pseudo-vector embeds (delegated to
+    RecordedOpenAIClient), and a rationale that just echoes the computed factors."""
+
+    def __init__(self, enrich_result: EnrichResult, extract_result: ExtractionResult) -> None:
+        self._enrich_result = enrich_result
+        self._extract_result = extract_result
+        self._recorded = RecordedOpenAIClient(FIXTURES_DIR)
+
+    async def discover_sources(
+        self, queries: Sequence[str], *, allowed_domains: Sequence[str] | None = None
+    ) -> list[Source]:
+        raise NotImplementedError
+
+    async def enrich_company(
+        self, *, name: str, domain: str | None, page_text: str | None
+    ) -> EnrichResult:
+        return self._enrich_result
+
+    async def extract_posting(
+        self, *, page_text: str, company_name: str | None = None
+    ) -> ExtractionResult:
+        return self._extract_result
+
+    async def embed(self, texts: Sequence[str]) -> list[list[float]]:
+        return await self._recorded.embed(texts)
+
+    async def rationale(
+        self, *, factors: dict[str, int], overlap: tuple[int, int], red_flag: str | None
+    ) -> str:
+        return f"role={factors['role']} skill={factors['skill']}"
+
+    async def aclose(self) -> None:
+        return None
+
+
+class _AnyDocFetcher:
+    """Returns a fixed FetchedDoc for every URL requested."""
+
+    def __init__(self, doc: FetchedDoc) -> None:
+        self._doc = doc
+
+    async def get(self, url: str, *, accept: str = "text/html") -> FetchedDoc:
+        return self._doc
+
+    async def aclose(self) -> None:
+        return None
+
+
+@requires_db
+async def test_ingest_company_scores_extracted_postings_for_read_model(
+    db_session: AsyncSession,
+) -> None:
+    user = await make_user(db_session)
+    await set_tenant(db_session, user.id)
+    company = Company(user_id=user.id, name="Acme", domain="acme.com")
+    db_session.add(company)
+    db_session.add(CandidateProfile(user_id=user.id, skills=["Python", "PyTorch"]))
+    db_session.add(
+        Targeting(
+            user_id=user.id,
+            role_titles=["ML Engineer"],
+            seniority=["Senior"],
+            must_haves=["Python"],
+        )
+    )
+    await db_session.flush()
+    company_id = company.id
+
+    shell = Posting(
+        user_id=user.id,
+        company_id=company.id,
+        source="scrape",
+        source_url="https://acme.com/jobs/1",
+        content_hash="shell-1",
+    )
+    db_session.add(shell)
+    await db_session.flush()
+    posting_id = shell.id
+
+    extract_result = ExtractionResult(
+        title="Senior ML Engineer",
+        required_skills=["Python", "PyTorch"],
+        seniority="Senior",
+        extraction_confidence=85,
+    )
+    openai = _FullStubOpenAI(EnrichResult(), extract_result)
+    fetcher = _AnyDocFetcher(FetchedDoc(url="https://acme.com/jobs/1", status=200, text="job text"))
+    deps = PipelineDeps(
+        openai=openai,
+        fetcher=fetcher,
+        settings=Settings(),
+        now=lambda: datetime(2026, 7, 5, tzinfo=UTC),
+    )
+
+    await ingest_company(db_session, user.id, company_id, deps)
+
+    score = await db_session.get(Score, posting_id)
+    assert score is not None
+    assert 0 <= score.factor_role <= 100
+    assert 0 <= score.factor_skill <= 100
+    assert score.rationale != ""
+
+    job = await get_job(db_session, user.id, posting_id)
+    assert job is not None
+    assert 0 <= job.match <= 100
+    assert job.rationale != ""
