@@ -121,11 +121,14 @@ async def ingest_company(
     await fetch_postings(session, user_id, company, deps)
 
     needing_extraction = await session.scalars(
-        select(Posting).where(
+        select(Posting)
+        .where(
             Posting.company_id == company.id,
             Posting.user_id == user_id,
             Posting.title.is_(None),
         )
+        .order_by(Posting.first_seen_at.desc())
+        .limit(deps.settings.ingest_max_postings)
     )
     for posting in needing_extraction:
         await extract_posting(session, posting, deps)

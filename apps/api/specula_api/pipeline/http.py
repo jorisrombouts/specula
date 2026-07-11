@@ -57,7 +57,12 @@ class PoliteFetcher:
             raise Disallowed(url)
 
         await self._throttle(host)
-        response = await self._get_with_retry(url, accept)
+        try:
+            response = await self._get_with_retry(url, accept)
+        except httpx.HTTPError:
+            # Dead host, DNS failure, timeout, connection reset — a crawler skips a
+            # bad URL, it never crashes the run. Downstream treats non-200 as "no page".
+            return FetchedDoc(url=url, status=0, text="")
         return FetchedDoc(
             url=str(response.url),
             status=response.status_code,

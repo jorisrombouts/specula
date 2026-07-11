@@ -30,19 +30,33 @@ class _Candidate:
     found_query: str
 
 
+def _region_hint(lens: Lens) -> str:
+    """A short location hint for a job-search query, from the lens scope (a country code
+    or 'City, CC') or, failing that, a remote/EU cue in the lens name. Generic lenses
+    ('All', 'Foreign HQ') contribute no hint. 'Any region' is not a search term."""
+    scope = (lens.scope or "").strip()
+    if scope and scope.lower() != "any region":
+        return {"ES": "Spain", "DE": "Germany", "NL": "Netherlands"}.get(
+            scope, scope.split(",")[0].strip()
+        )
+    name = (lens.name or "").lower()
+    if "remote" in name or "eu" in name:
+        return "remote EU"
+    return ""
+
+
 def build_seed_queries(role_titles: list[str], lenses: list[Lens], *, cap: int) -> list[str]:
-    """One query per (active lens x role title): role title + lens seeds + lens scope,
-    deduped and capped at `cap`."""
+    """Effective ATS job-board search queries: '<role> jobs <region hint>'. Role titles are
+    the outer loop so the first `cap` queries span multiple lenses (variety over the cap),
+    deduped. Kept clean — the web_search tool is already domain-filtered to ATS hosts, so the
+    query only needs the role + a location cue, not a pile of synonyms."""
+    active = [lens for lens in lenses if lens.active]
     queries: list[str] = []
     seen: set[str] = set()
-    for lens in lenses:
-        if not lens.active:
-            continue
-        for role_title in role_titles:
-            parts = [role_title, *lens.seeds]
-            if lens.scope:
-                parts.append(lens.scope)
-            query = " ".join(p.strip() for p in parts if p and p.strip())
+    for role_title in role_titles:
+        for lens in active:
+            hint = _region_hint(lens)
+            query = " ".join(p for p in (role_title.strip(), "jobs", hint) if p)
             if not query or query in seen:
                 continue
             seen.add(query)

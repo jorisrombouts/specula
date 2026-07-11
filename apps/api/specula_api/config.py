@@ -22,6 +22,10 @@ class Settings(BaseSettings):
     crawl_per_domain_delay_ms: int = 1000
     crawl_timeout_s: float = 15.0
     discovery_max_searches: int = 5
+    # Cap the per-company LLM extraction/scoring: a big board (Greenhouse can return 600+
+    # jobs) would otherwise fire one extraction call per posting. Shells are still all
+    # crawled (cheap); only this many are LLM-extracted + scored per ingest.
+    ingest_max_postings: int = 25
     low_confidence_threshold: int = 50  # matches services/insights.py LOW_CONFIDENCE_THRESHOLD
     pipeline_mode: Literal["live", "recorded", "record"] = "live"
     pipeline_execution: Literal["enqueue", "inline"] = "inline"  # no Redis/worker this milestone

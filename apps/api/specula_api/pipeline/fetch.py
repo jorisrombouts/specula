@@ -13,9 +13,10 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from specula_api.db.models import Company, Posting
+from specula_api.db.models import Company, Posting, Targeting
 from specula_api.pipeline.deps import PipelineDeps
 from specula_api.pipeline.source import resolve_adapter
+from specula_api.pipeline.util import title_matches_roles
 
 
 class FetchResult(BaseModel):
@@ -42,6 +43,12 @@ async def fetch_postings(
     except Exception:
         raws = []
         errors = 1
+
+    # Narrow a big board to the user's target roles by feed title (cheap) before any
+    # per-posting LLM extraction runs downstream.
+    targeting = await session.get(Targeting, user_id)
+    role_titles = targeting.role_titles if targeting is not None else []
+    raws = [rp for rp in raws if title_matches_roles(rp.title_hint, role_titles)]
 
     now = deps.now()
     seen_hashes = {rp.content_hash for rp in raws}
