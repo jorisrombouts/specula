@@ -20,8 +20,11 @@ instrument UI. Built in phases (M0–M6) from a Claude Design prototype.
 - One phase at a time via superpowers: brainstorm → writing-plans → executing-plans; TDD for logic;
   verification-before-completion before any "done"; code-review before merge.
 - Default to YAGNI/KISS: no service, file, folder, or abstraction until the milestone that needs it.
-- **Current focus (M3):** full pipeline discovery→approval→crawl→extract→score, **manual trigger,
-  inline execution** — scheduler/worker/hosting deferred.
+- **Done (M0–M4):** the full pipeline discovery→approval→crawl→extract→score runs on a **manual
+  trigger, inline** — scheduler/worker/hosting deferred. M4 is live-proven against real ATS boards
+  and real OpenAI calls; see `docs/M4-STATUS.md`.
+- **Current focus (M5 — Hardening):** observability, rate limits, scraping politeness, export/delete,
+  E2E + load test, cost controls. *(Spec §15–16.)*
 
 ## Stack & hosting (free-tier first)
 - Monorepo: `apps/api` (FastAPI · uv · ruff · mypy --strict · pytest) + `apps/web` (Next 16 · TS strict
