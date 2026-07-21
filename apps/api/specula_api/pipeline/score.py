@@ -11,6 +11,7 @@ import math
 from uuid import UUID
 
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from specula_api.db.models import CandidateProfile, Posting, Score, SkillsTaxonomy, Targeting
@@ -59,6 +60,86 @@ def _canonicalize(skill: str, alias_map: dict[str, str]) -> str:
 
 def _canon_set(skills: list[str], alias_map: dict[str, str]) -> set[str]:
     return {_canonicalize(s, alias_map) for s in skills if s.strip()}
+
+
+def _vector_provenance(deps: PipelineDeps) -> str:
+    """What produced a cached vector — the cache is only valid within one provenance.
+
+    `recorded` mode returns deterministic PSEUDO-vectors for any text without a recorded
+    fixture (see openai_client._pseudo_vector); they carry no semantics, and this table is
+    GLOBAL and unscoped, so a test run would otherwise poison live scoring permanently.
+    Naming the model for real embeddings covers the other direction: switching
+    `openai_embed_model` puts vectors in a different space, and stale ones must not be
+    silently reused.
+    """
+    if deps.settings.pipeline_mode == "recorded":
+        return "recorded"
+    return deps.settings.openai_embed_model
+
+
+async def skill_vectors(
+    session: AsyncSession, canonical_skills: set[str], deps: PipelineDeps
+) -> dict[str, list[float]]:
+    """Embedding per canonical skill, cached GLOBALLY in `skills_taxonomy.vec`.
+
+    Skills repeat heavily across postings ("Python" appears in most of them), so embedding
+    per posting would pay for the same vector hundreds of times. The cache is keyed by the
+    canonical form, which means an aliased skill resolves to the same entry — and therefore
+    the same vector — as its canonical name, so exact and aliased matches compare at cosine
+    1.0 without a separate string-matching code path.
+
+    Only vectors from the CURRENT provenance are reused (see `_vector_provenance`); anything
+    else is re-embedded and overwritten, so the cache is self-healing.
+
+    Writes through `skills_taxonomy`, which also holds hand-curated aliases: the upsert
+    touches `vec`/`vec_model` ONLY, so filling in a vector never clobbers them.
+    """
+    if not canonical_skills:
+        return {}
+
+    provenance = _vector_provenance(deps)
+    rows = await session.scalars(
+        select(SkillsTaxonomy).where(
+            SkillsTaxonomy.canonical.in_(canonical_skills),
+            SkillsTaxonomy.vec_model == provenance,
+        )
+    )
+    vectors = {row.canonical: row.vec for row in rows if row.vec is not None}
+
+    missing = sorted(canonical_skills - set(vectors))
+    if missing:
+        embedded = await deps.openai.embed(missing)
+        vectors.update(zip(missing, embedded, strict=True))
+        statement = pg_insert(SkillsTaxonomy).values(
+            [
+                {"canonical": skill, "vec": vectors[skill], "vec_model": provenance}
+                for skill in missing
+            ]
+        )
+        await session.execute(
+            statement.on_conflict_do_update(
+                index_elements=[SkillsTaxonomy.canonical],
+                set_={"vec": statement.excluded.vec, "vec_model": statement.excluded.vec_model},
+            )
+        )
+
+    return vectors
+
+
+def semantic_overlap(
+    required_vecs: list[list[float]], candidate_vecs: list[list[float]], *, threshold: float
+) -> int:
+    """How many required skills the candidate covers: a requirement counts once when its
+    cosine to ANY candidate skill clears `threshold`.
+
+    Per-requirement, so one broad candidate skill may legitimately cover several
+    requirements and is never "used up" by the first one it matches.
+    """
+    return sum(
+        1
+        for required in required_vecs
+        if any(cosine(required, candidate) >= threshold for candidate in candidate_vecs)
+    )
 
 
 def _seniority_adjustment(posting_seniority: str | None, targeting_seniority: list[str]) -> int:
@@ -115,8 +196,18 @@ async def score_posting(
     alias_map = await _alias_map(session)
     required_canon = _canon_set(posting.required_skills, alias_map)
     candidate_canon = _canon_set(candidate.skills, alias_map)
-    matched = required_canon & candidate_canon
-    overlap_matched = len(matched)
+    # Skills are compared as embeddings, not strings. String equality counted a requirement
+    # as met only when both sides happened to word it identically, so a candidate with
+    # PyTorch and scikit-learn scored zero against "Machine Learning" — every posting in the
+    # pool landed on the same 2 matches (Python, SQL) and tripped the read model's
+    # low-overlap red flag. Identical/aliased skills share one canonical cache entry and so
+    # still compare at exactly 1.0; the threshold only governs the semantic tail.
+    vectors = await skill_vectors(session, required_canon | candidate_canon, deps)
+    overlap_matched = semantic_overlap(
+        [vectors[skill] for skill in required_canon if skill in vectors],
+        [vectors[skill] for skill in candidate_canon if skill in vectors],
+        threshold=deps.settings.skill_match_similarity,
+    )
     overlap_total = len(required_canon)
     overlap_pct = (overlap_matched / overlap_total * 100) if overlap_total else 0.0
 

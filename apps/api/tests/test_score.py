@@ -26,7 +26,13 @@ from specula_api.pipeline.openai_client import (
     RecordedOpenAIClient,
     Source,
 )
-from specula_api.pipeline.score import cosine, ensure_candidate_vectors, score_posting
+from specula_api.pipeline.score import (
+    cosine,
+    ensure_candidate_vectors,
+    score_posting,
+    semantic_overlap,
+    skill_vectors,
+)
 from specula_api.services.jobs import get_job
 from specula_api.services.run import ingest_company
 
@@ -209,6 +215,177 @@ class TestCosine:
         assert cosine([0.0, 0.0], [1.0, 0.0]) == 0.0
 
 
+# --- semantic_overlap (pure) ----------------------------------------------------------
+#
+# Hand-built 2-D vectors, not embeddings: these assert the MATCHING RULE (max cosine over
+# candidates vs threshold), which must hold whatever the embedding space looks like.
+
+_THRESHOLD = 0.55
+
+
+class TestSemanticOverlap:
+    def test_identical_vectors_count_as_covered(self) -> None:
+        # The exact/aliased case: one canonical cache entry -> the same vector on both
+        # sides -> cosine 1.0. Exact matching is subsumed, not bolted on beside.
+        assert semantic_overlap([[1.0, 0.0]], [[1.0, 0.0]], threshold=_THRESHOLD) == 1
+
+    def test_orthogonal_vectors_are_not_covered(self) -> None:
+        assert semantic_overlap([[1.0, 0.0]], [[0.0, 1.0]], threshold=_THRESHOLD) == 0
+
+    def test_near_neighbour_above_threshold_is_covered(self) -> None:
+        # cos(45 deg) = 0.707 >= 0.55: "Machine Learning" covered by "PyTorch".
+        assert semantic_overlap([[1.0, 0.0]], [[1.0, 1.0]], threshold=_THRESHOLD) == 1
+
+    def test_near_neighbour_below_threshold_is_not_covered(self) -> None:
+        # cos(~76 deg) = 0.243 < 0.55: related-but-distinct stays a miss.
+        assert semantic_overlap([[1.0, 0.0]], [[1.0, 4.0]], threshold=_THRESHOLD) == 0
+
+    def test_requirement_matches_its_best_candidate_not_the_first(self) -> None:
+        required = [[1.0, 0.0]]
+        candidates = [[0.0, 1.0], [-1.0, 0.0], [1.0, 0.0]]  # only the last one covers it
+        assert semantic_overlap(required, candidates, threshold=_THRESHOLD) == 1
+
+    def test_one_candidate_may_cover_several_requirements(self) -> None:
+        # A generalist skill legitimately covers more than one requirement — the count is
+        # per REQUIREMENT, so candidates are never "used up".
+        required = [[1.0, 0.0], [1.0, 0.1], [0.0, 1.0]]
+        assert semantic_overlap(required, [[1.0, 0.0]], threshold=_THRESHOLD) == 2
+
+    def test_counts_each_requirement_at_most_once(self) -> None:
+        required = [[1.0, 0.0]]
+        assert semantic_overlap(required, [[1.0, 0.0], [1.0, 0.0]], threshold=_THRESHOLD) == 1
+
+    def test_empty_sides_are_zero_not_an_error(self) -> None:
+        assert semantic_overlap([], [[1.0, 0.0]], threshold=_THRESHOLD) == 0
+        assert semantic_overlap([[1.0, 0.0]], [], threshold=_THRESHOLD) == 0
+        assert semantic_overlap([], [], threshold=_THRESHOLD) == 0
+
+
+# --- skill_vectors (global embedding cache) -------------------------------------------
+
+
+class _CountingOpenAI(_EchoingOpenAI):
+    """Counts embed calls and the texts they carried, so the cache can be proven to
+    actually prevent the second round trip."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.embedded: list[list[str]] = []
+
+    async def embed(self, texts: Sequence[str]) -> list[list[float]]:
+        self.embedded.append(list(texts))
+        return await super().embed(texts)
+
+
+def _unique_skill(prefix: str) -> str:
+    """`skills_taxonomy` is a GLOBAL unscoped table, so a fixed name like "python" would
+    collide with committed rows (the demo seeder writes some). Same guard as
+    test_score_posting_uses_taxonomy_aliases_for_overlap."""
+    return f"{prefix}-{uuid4()}"
+
+
+@requires_db
+async def test_skill_vectors_embeds_each_distinct_skill_once(db_session: AsyncSession) -> None:
+    one, two = _unique_skill("python"), _unique_skill("pytorch")
+    openai = _CountingOpenAI()
+
+    vectors = await skill_vectors(db_session, {one, two}, _deps(openai))
+
+    assert set(vectors) == {one, two}
+    assert sorted(openai.embedded[0]) == sorted([one, two])
+    assert len(openai.embedded) == 1, "distinct skills must batch into ONE embed call"
+
+
+@requires_db
+async def test_skill_vectors_second_call_hits_the_cache(db_session: AsyncSession) -> None:
+    one, two = _unique_skill("python"), _unique_skill("pytorch")
+    await skill_vectors(db_session, {one, two}, _deps(_CountingOpenAI()))
+
+    second = _CountingOpenAI()
+    vectors = await skill_vectors(db_session, {one, two}, _deps(second))
+
+    assert set(vectors) == {one, two}
+    assert second.embedded == [], "cached skills must not be re-embedded"
+
+
+@requires_db
+async def test_skill_vectors_embeds_only_the_uncached_skills(db_session: AsyncSession) -> None:
+    cached, fresh = _unique_skill("python"), _unique_skill("rust")
+    await skill_vectors(db_session, {cached}, _deps(_CountingOpenAI()))
+
+    openai = _CountingOpenAI()
+    await skill_vectors(db_session, {cached, fresh}, _deps(openai))
+
+    assert openai.embedded == [[fresh]]
+
+
+def _deps_with(openai: _EchoingOpenAI, **overrides: object) -> PipelineDeps:
+    return PipelineDeps(
+        openai=openai,
+        fetcher=_UnusedFetcher(),
+        settings=Settings(**overrides),  # type: ignore[arg-type]
+        now=lambda: datetime(2026, 7, 5, tzinfo=UTC),
+    )
+
+
+@requires_db
+async def test_skill_vectors_does_not_reuse_another_provenances_vectors(
+    db_session: AsyncSession,
+) -> None:
+    """`skills_taxonomy` is GLOBAL and unscoped, so a recorded run (deterministic
+    PSEUDO-vectors, no semantics) writes into the very rows live scoring reads. Reusing
+    them silently collapsed every semantic cosine to noise on real data — the cache must
+    only serve vectors from its own provenance."""
+    skill = _unique_skill("python")
+    await skill_vectors(
+        db_session, {skill}, _deps_with(_CountingOpenAI(), pipeline_mode="recorded")
+    )
+
+    live = _CountingOpenAI()
+    await skill_vectors(db_session, {skill}, _deps_with(live, pipeline_mode="live"))
+
+    assert live.embedded == [[skill]], "recorded pseudo-vectors must never serve a live run"
+
+
+@requires_db
+async def test_skill_vectors_reembeds_when_the_embedding_model_changes(
+    db_session: AsyncSession,
+) -> None:
+    """Vectors from a different embedding model live in a different space. Switching
+    models must invalidate the cache, not silently compare across spaces."""
+    skill = _unique_skill("python")
+    await skill_vectors(
+        db_session,
+        {skill},
+        _deps_with(_CountingOpenAI(), openai_embed_model="text-embedding-3-small"),
+    )
+
+    upgraded = _CountingOpenAI()
+    await skill_vectors(
+        db_session, {skill}, _deps_with(upgraded, openai_embed_model="text-embedding-3-large")
+    )
+
+    assert upgraded.embedded == [[skill]], "a model change must invalidate cached vectors"
+
+
+@requires_db
+async def test_skill_vectors_caching_preserves_curated_aliases(db_session: AsyncSession) -> None:
+    """The cache writes through `skills_taxonomy`, which also carries hand-curated
+    aliases. Filling in a vector must never clobber them."""
+    canonical, alias = _unique_skill("python"), _unique_skill("py")
+    db_session.add(SkillsTaxonomy(canonical=canonical, aliases=[alias]))
+    await db_session.flush()
+
+    await skill_vectors(db_session, {canonical}, _deps(_CountingOpenAI()))
+
+    row = await db_session.scalar(
+        select(SkillsTaxonomy).where(SkillsTaxonomy.canonical == canonical)
+    )
+    assert row is not None
+    assert row.aliases == [alias]
+    assert row.vec is not None
+
+
 # --- ensure_candidate_vectors ---------------------------------------------------------
 
 
@@ -332,6 +509,59 @@ async def test_score_posting_uses_taxonomy_aliases_for_overlap(db_session: Async
 
     assert score.overlap_matched == 1
     assert score.overlap_total == 1
+
+
+def _vec(*leading: float) -> list[float]:
+    """A vector of the embedding column's width whose leading components are given."""
+    return list(leading) + [0.0] * (1536 - len(leading))
+
+
+class _PlantedVectorOpenAI(_EchoingOpenAI):
+    """Returns planted vectors for named skills so a SEMANTIC match can be asserted
+    deterministically. The recorded pseudo-vectors are random by construction, so they can
+    only ever express identity — never 'PyTorch is near Machine Learning'."""
+
+    def __init__(self, planted: dict[str, list[float]]) -> None:
+        super().__init__()
+        self._planted = planted
+
+    async def embed(self, texts: Sequence[str]) -> list[list[float]]:
+        fallback = await super().embed(texts)
+        return [
+            self._planted.get(text, default) for text, default in zip(texts, fallback, strict=True)
+        ]
+
+
+@requires_db
+async def test_score_posting_counts_a_semantically_covered_skill(
+    db_session: AsyncSession,
+) -> None:
+    """The defect this whole change exists for: a required skill the candidate covers
+    under a DIFFERENT name used to count as a miss."""
+    user = await make_user(db_session)
+    await set_tenant(db_session, user.id)
+    required_near, required_far = _unique_skill("machine-learning"), _unique_skill("rust")
+    candidate_skill = _unique_skill("pytorch")
+    openai = _PlantedVectorOpenAI(
+        {
+            required_near: _vec(1.0, 0.0, 0.0),
+            candidate_skill: _vec(1.0, 1.0, 0.0),  # cos 0.707 -> covers "machine learning"
+            required_far: _vec(0.0, 0.0, 1.0),  # orthogonal to the candidate -> a real miss
+        }
+    )
+    candidate = await _make_candidate(db_session, user.id, skills=[candidate_skill])
+    targeting = await _make_targeting(db_session, user.id, role_titles=["ML Engineer"])
+    posting = await _make_posting(
+        db_session,
+        user.id,
+        title="ML Engineer",
+        required_skills=[required_near, required_far],
+    )
+
+    score = await _score(db_session, user.id, posting, candidate, targeting, _deps(openai))
+
+    assert score.overlap_matched == 1, "the near skill must count without an exact string match"
+    assert score.overlap_total == 2, "the orthogonal skill must stay a miss"
 
 
 @requires_db
