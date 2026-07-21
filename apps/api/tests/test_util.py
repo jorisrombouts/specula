@@ -1,6 +1,11 @@
 import pytest
 
-from specula_api.pipeline.util import html_to_text, title_matches_roles, to_country_code
+from specula_api.pipeline.util import (
+    html_to_text,
+    title_matches_roles,
+    to_country_code,
+    to_skill_tokens,
+)
 
 # --- title_matches_roles ---------------------------------------------------------
 
@@ -111,3 +116,69 @@ def test_to_country_code_none_and_blank_are_none() -> None:
 
 def test_to_country_code_unknown_gibberish_is_none_never_a_wrong_code() -> None:
     assert to_country_code("Qwxzplorf Nonexistica") is None
+
+
+# --- to_skill_tokens -------------------------------------------------------------
+#
+# Real strings observed in the live corpus: 11% of extracted "skills" were requirement
+# SENTENCES rather than skill names. A sentence embeds nowhere near a skill token, so it
+# can never match a candidate skill — it just inflates overlap_total and deflates
+# factor_skill, the same systematic understatement semantic matching was meant to end.
+
+
+def test_to_skill_tokens_keeps_skill_names() -> None:
+    assert to_skill_tokens(["Python", "PyTorch", "scikit-learn"]) == [
+        "Python",
+        "PyTorch",
+        "scikit-learn",
+    ]
+
+
+def test_to_skill_tokens_keeps_short_multiword_skills() -> None:
+    # Genuine skills are often 2-4 words — the cap must not eat them.
+    assert to_skill_tokens(
+        ["Natural Language Processing", "A/B testing", "PyTorch Distributed"]
+    ) == [
+        "Natural Language Processing",
+        "A/B testing",
+        "PyTorch Distributed",
+    ]
+
+
+def test_to_skill_tokens_drops_requirement_sentences() -> None:
+    # Verbatim from the live corpus.
+    assert to_skill_tokens(
+        [
+            "Python",
+            "8+ years of experience in software engineering, machine learning engineering, "
+            "or applied AI",
+            "SQL",
+        ]
+    ) == ["Python", "SQL"]
+
+
+def test_to_skill_tokens_drops_a_sentence_that_names_real_skills() -> None:
+    # Tempting to keep because it mentions PyTorch — but as one string it matches nothing
+    # and only inflates the denominator. Decomposing it is the model's job (prompt), not a
+    # regex's.
+    assert (
+        to_skill_tokens(
+            [
+                "Hands-on experience with Megatron-LM/Megatron-Core/NeMo, DeepSpeed, or "
+                "serious FSDP/ZeRO expertise"
+            ]
+        )
+        == []
+    )
+
+
+def test_to_skill_tokens_strips_whitespace_and_drops_blanks() -> None:
+    assert to_skill_tokens(["  Python  ", "", "   ", "SQL"]) == ["Python", "SQL"]
+
+
+def test_to_skill_tokens_empty_list_stays_empty() -> None:
+    assert to_skill_tokens([]) == []
+
+
+def test_to_skill_tokens_preserves_order() -> None:
+    assert to_skill_tokens(["SQL", "Python", "Docker"]) == ["SQL", "Python", "Docker"]

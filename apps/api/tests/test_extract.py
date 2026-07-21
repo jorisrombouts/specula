@@ -321,6 +321,38 @@ async def test_extract_posting_normalizes_full_country_name_to_alpha2(
 
 
 @requires_db
+async def test_extract_posting_stores_skill_tokens_not_requirement_sentences(
+    db_session: AsyncSession,
+) -> None:
+    """Measured on the live corpus: 11% of extracted "skills" came back as requirement
+    prose. A sentence embeds nowhere near a skill token, so it can never match a candidate
+    skill — it only inflates overlap_total and deflates factor_skill. The prompt asks for
+    atomic skills; this is the guard for when the model ignores it."""
+    user = await make_user(db_session)
+    await set_tenant(db_session, user.id)
+    posting = await _make_posting_shell(db_session, user.id, None, _URL)
+
+    fetcher = _StubFetcher({_URL: FetchedDoc(url=_URL, status=200, text=_PAGE_TEXT)})
+    result = FULL_RESULT.model_copy(
+        update={
+            "required_skills": [
+                "Python",
+                "8+ years of experience in software engineering, machine learning "
+                "engineering, or applied AI",
+                "Natural Language Processing",
+            ],
+            "nice_to_have": ["Strong experience developing and deploying models in production"],
+        }
+    )
+    openai = _StubOpenAI(result)
+
+    await extract_posting(db_session, posting, _deps(openai, fetcher))
+
+    assert posting.required_skills == ["Python", "Natural Language Processing"]
+    assert posting.nice_to_have == []
+
+
+@requires_db
 async def test_extract_posting_keeps_a_correct_alpha2_code(db_session: AsyncSession) -> None:
     user = await make_user(db_session)
     await set_tenant(db_session, user.id)
