@@ -4,7 +4,7 @@ import json
 import xml.etree.ElementTree as ElementTree
 from collections.abc import Iterable
 from typing import Protocol
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import parse_qsl, urlencode, urljoin, urlsplit, urlunsplit
 from xml.etree.ElementTree import Element
 
 from pydantic import BaseModel
@@ -138,43 +138,54 @@ def _matches_host(host: str, suffixes: tuple[str, ...]) -> bool:
 
 
 def _board_token(company: CompanyLike, hosts: tuple[str, ...]) -> str | None:
-    """Derive the ATS board token from careers_url (preferred) or fall back to domain."""
-    careers_url = company.careers_url
-    if careers_url:
-        parts = urlsplit(careers_url if "://" in careers_url else f"//{careers_url}")
-        if _matches_host(parts.netloc.lower(), hosts):
-            segment = next((s for s in parts.path.split("/") if s), None)
-            if segment:
-                return segment.lower()
+    """Derive the ATS board token from careers_url (preferred), else the domain.
 
-    domain = company.domain
-    if domain:
-        label = domain.lower().removeprefix("www.").split(".")[0]
-        if label:
-            return label
-    return None
-
-
-def _subdomain_token(company: CompanyLike, hosts: tuple[str, ...]) -> str | None:
-    """Derive the ATS board token from the company's per-tenant subdomain (careers_url
-    preferred, else domain) — for ATSes where the token lives in the subdomain rather than
-    the URL path (Recruitee, Personio), unlike the path-token boards above."""
+    The domain may only supply a token when it IS on the ATS host. A bare domain label was
+    previously used verbatim, so an LLM-guessed `ats` (enrich feeds it into detect_ats, which
+    trusts it) turned monday.com into apply.workable.com/.../monday — ingesting whichever
+    stranger owns that slug as this company.
+    """
     careers_url = company.careers_url
     if careers_url:
         parts = urlsplit(careers_url if "://" in careers_url else f"//{careers_url}")
         host = parts.netloc.lower()
-        for suffix in hosts:
-            if host.endswith(f".{suffix}"):
-                label = host[: -(len(suffix) + 1)]
-                if label:
-                    return label
+        if _matches_host(host, hosts):
+            segment = next((s for s in parts.path.split("/") if s), None)
+            if segment:
+                return segment.lower()
+            label = _leading_label_on_host(host, hosts)
+            if label:
+                return label
 
-    domain = company.domain
-    if domain:
-        label = domain.lower().removeprefix("www.").split(".")[0]
-        if label:
-            return label
+    return _leading_label_on_host(company.domain, hosts)
+
+
+def _leading_label_on_host(value: str | None, hosts: tuple[str, ...]) -> str | None:
+    """The per-tenant label of a host that is itself on the ATS
+    (acme.job-boards.greenhouse.io -> "acme"); None for anything not on the ATS host.
+
+    Load-bearing for live discovery: those approvals carry a fabricated ATS-host domain and
+    no careers_url, so this is the only place their token comes from.
+    """
+    if not value:
+        return None
+    host = value.lower().removeprefix("www.")
+    if "://" in host:
+        host = urlsplit(host).netloc
+    for suffix in hosts:
+        if host.endswith(f".{suffix}"):
+            label = host[: -(len(suffix) + 1)].split(".")[0]
+            if label:
+                return label
     return None
+
+
+def _subdomain_token(company: CompanyLike, hosts: tuple[str, ...]) -> str | None:
+    """Token for ATSes where it lives in the subdomain rather than the URL path (Recruitee,
+    Personio). Host-verified for the same reason as `_board_token`."""
+    return _leading_label_on_host(company.careers_url, hosts) or _leading_label_on_host(
+        company.domain, hosts
+    )
 
 
 async def _fetch_json(fetcher: Fetcher, url: str) -> object:
@@ -223,7 +234,9 @@ class GreenhouseAdapter:
     async def list_postings(self, company: CompanyLike, fetcher: Fetcher) -> list[RawPosting]:
         token = _board_token(company, _GREENHOUSE_HOSTS)
         if not token:
-            return []
+            raise BoardUnavailable(
+                f"no {self.ats} board token derivable for {company.domain or company.careers_url!r}"
+            )
         data = await _fetch_json(
             fetcher, f"https://boards-api.greenhouse.io/v1/boards/{token}/jobs"
         )
@@ -243,7 +256,9 @@ class LeverAdapter:
     async def list_postings(self, company: CompanyLike, fetcher: Fetcher) -> list[RawPosting]:
         token = _board_token(company, _LEVER_HOSTS)
         if not token:
-            return []
+            raise BoardUnavailable(
+                f"no {self.ats} board token derivable for {company.domain or company.careers_url!r}"
+            )
         data = await _fetch_json(fetcher, f"https://api.lever.co/v0/postings/{token}?mode=json")
         if not isinstance(data, list):
             return []
@@ -260,7 +275,9 @@ class AshbyAdapter:
     async def list_postings(self, company: CompanyLike, fetcher: Fetcher) -> list[RawPosting]:
         token = _board_token(company, _ASHBY_HOSTS)
         if not token:
-            return []
+            raise BoardUnavailable(
+                f"no {self.ats} board token derivable for {company.domain or company.careers_url!r}"
+            )
         data = await _fetch_json(fetcher, f"https://api.ashbyhq.com/posting-api/job-board/{token}")
         jobs = data.get("jobs") if isinstance(data, dict) else None
         if not isinstance(jobs, list):
@@ -278,7 +295,9 @@ class SmartRecruitersAdapter:
     async def list_postings(self, company: CompanyLike, fetcher: Fetcher) -> list[RawPosting]:
         token = _board_token(company, _SMARTRECRUITERS_HOSTS)
         if not token:
-            return []
+            raise BoardUnavailable(
+                f"no {self.ats} board token derivable for {company.domain or company.careers_url!r}"
+            )
         data = await _fetch_json(
             fetcher, f"https://api.smartrecruiters.com/v1/companies/{token}/postings"
         )
@@ -298,7 +317,9 @@ class RecruiteeAdapter:
     async def list_postings(self, company: CompanyLike, fetcher: Fetcher) -> list[RawPosting]:
         token = _subdomain_token(company, _RECRUITEE_HOSTS)
         if not token:
-            return []
+            raise BoardUnavailable(
+                f"no {self.ats} board token derivable for {company.domain or company.careers_url!r}"
+            )
         data = await _fetch_json(fetcher, f"https://{token}.recruitee.com/api/offers/")
         offers = data.get("offers") if isinstance(data, dict) else None
         if not isinstance(offers, list):
@@ -316,7 +337,9 @@ class WorkableAdapter:
     async def list_postings(self, company: CompanyLike, fetcher: Fetcher) -> list[RawPosting]:
         token = _board_token(company, _WORKABLE_HOSTS)
         if not token:
-            return []
+            raise BoardUnavailable(
+                f"no {self.ats} board token derivable for {company.domain or company.careers_url!r}"
+            )
         data = await _fetch_json(
             fetcher, f"https://apply.workable.com/api/v1/widget/accounts/{token}?details=true"
         )
@@ -336,7 +359,9 @@ class PersonioAdapter:
     async def list_postings(self, company: CompanyLike, fetcher: Fetcher) -> list[RawPosting]:
         token = _subdomain_token(company, _PERSONIO_HOSTS)
         if not token:
-            return []
+            raise BoardUnavailable(
+                f"no {self.ats} board token derivable for {company.domain or company.careers_url!r}"
+            )
         root = await _fetch_xml(fetcher, f"https://{token}.jobs.personio.de/xml")
         if root is None:
             return []
@@ -388,8 +413,8 @@ class GenericHtmlAdapter:
             href = anchor.attributes.get("href")
             if not href:
                 continue
-            url = urljoin(careers_url, href)
-            if url in seen_urls or not _looks_like_job_link(url):
+            url = _canonical_job_url(urljoin(careers_url, href))
+            if url in seen_urls or not _looks_like_job_link(url, careers_url):
                 continue
             seen_urls.add(url)
             title_hint = anchor.text(strip=True) or None
@@ -406,12 +431,39 @@ class GenericHtmlAdapter:
         return postings
 
 
-def _looks_like_job_link(url: str) -> bool:
+def _looks_like_job_link(url: str, base_url: str) -> bool:
+    """Whether an <a href> off a careers page plausibly points at one posting.
+
+    Without the scheme/host checks, `mailto:`, `javascript:`, in-page `#anchors` and
+    third-party links (a LinkedIn jobs page) all became Posting rows: each one is then fetched
+    and LLM-extracted, consuming the per-company extraction budget ahead of real jobs.
+    """
     parts = urlsplit(url)
+    if parts.scheme not in ("http", "https"):
+        return False
     host = parts.netloc.lower()
-    if any(host == d or host.endswith(f".{d}") for d in ATS_ALLOWED_DOMAINS):
-        return True
-    return any(keyword in parts.path.lower() for keyword in _JOB_LINK_KEYWORDS)
+    base = urlsplit(base_url)
+    on_ats = any(host == d or host.endswith(f".{d}") for d in ATS_ALLOWED_DOMAINS)
+    if not on_ats and host != base.netloc.lower():
+        return False
+    path = parts.path.rstrip("/")
+    if not path.strip("/"):
+        return False
+    if host == base.netloc.lower() and path == base.path.rstrip("/"):
+        return False  # the careers page linking to itself
+    return True if on_ats else any(k in path.lower() for k in _JOB_LINK_KEYWORDS)
+
+
+def _canonical_job_url(url: str) -> str:
+    """Drop the fragment and tracking params so one job doesn't become several postings.
+    Meaningful params (gh_jid, lever ids) are preserved — only known trackers go."""
+    parts = urlsplit(url)
+    kept = [
+        (k, v)
+        for k, v in parse_qsl(parts.query, keep_blank_values=True)
+        if not k.lower().startswith("utm_") and k.lower() not in {"gh_src", "ref", "source"}
+    ]
+    return urlunsplit(parts._replace(query=urlencode(kept), fragment=""))
 
 
 def _raw_postings(rows: Iterable[tuple[object, object, object]]) -> list[RawPosting]:

@@ -20,7 +20,11 @@ from specula_api.services.approval import apply_decision
 from specula_api.services.run import create_run, ingest_company, latest_run
 
 _FROZEN_NOW = datetime(2026, 7, 5, tzinfo=UTC)
-_NEW_COMPANY_DOMAIN = "acme.com"  # not one of the seeder's own _COMPANIES domains
+# Not one of the seeder's own _COMPANIES domains. An ATS-HOST domain, as live discovery
+# produces: a board token is only derived from a host that is actually on the ATS, so a plain
+# "acme.com" no longer resolves to the greenhouse board "acme" (it would have been someone
+# else's). The token is still "acme", so the recorded fixtures key identically.
+_NEW_COMPANY_DOMAIN = "acme.job-boards.greenhouse.io"
 
 
 class _RecordedExceptRationale:
