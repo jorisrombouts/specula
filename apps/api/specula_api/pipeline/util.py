@@ -22,6 +22,13 @@ _NON_COUNTRY_WORDS = {
     "apac",
 }
 
+# Longest a genuine skill name runs ("Natural Language Processing", "PyTorch Distributed",
+# "CI/CD pipeline design"). Measured against the live corpus: 79% of extracted skills were
+# <= 3 words and 9% were 4-6, while everything above that was a requirement SENTENCE
+# ("8+ years of experience in software engineering, machine learning engineering, or
+# applied AI"). See `to_skill_tokens`.
+_MAX_SKILL_WORDS = 6
+
 # Common variants that pycountry's exact lookup() doesn't resolve and whose fuzzy search
 # is ambiguous (e.g. "UK" fuzzy-matches 20+ countries sharing a substring) rather than
 # genuinely unresolvable — handled explicitly instead of trusting the fuzzy guard.
@@ -94,3 +101,26 @@ def html_to_text(html: str, *, max_chars: int = _MAX_PAGE_CHARS) -> str:
     text = root.text(separator=" ", strip=True) if root is not None else ""
     text = " ".join(text.split())
     return text[:max_chars]
+
+
+def to_skill_tokens(skills: list[str]) -> list[str]:
+    """Keep only entries that are actually skill NAMES, in the order given.
+
+    The extractor is asked for atomic skills but sometimes returns requirement prose
+    verbatim ("8+ years of experience in software engineering, machine learning
+    engineering, or applied AI"). Scoring compares skills as embeddings, and a sentence
+    sits nowhere near a skill token in that space: it can never match a candidate skill,
+    so it only inflates `overlap_total` and deflates `factor_skill` — the same systematic
+    understatement that string-equality matching used to cause.
+
+    Dropping is deliberate rather than splitting on punctuation: a sentence naming real
+    skills ("Hands-on experience with Megatron-LM/NeMo, DeepSpeed, or FSDP/ZeRO
+    expertise") would need genuine parsing to decompose, and guessing produces fragments
+    that match nothing. Decomposition is the model's job (see the extraction prompt); this
+    is the deterministic guard for when it doesn't, mirroring `to_country_code`.
+    """
+    return [
+        cleaned
+        for skill in skills
+        if (cleaned := skill.strip()) and len(cleaned.split()) <= _MAX_SKILL_WORDS
+    ]

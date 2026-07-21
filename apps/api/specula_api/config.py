@@ -59,6 +59,13 @@ class Settings(BaseSettings):
     # the semantic tail ("Machine Learning" covered by "PyTorch"). Tuned against the live
     # pool — see docs/SKILL-MATCHING.md.
     skill_match_similarity: float = 0.55
+    # Must-have coverage (spec §6.2 red_flag). Same comparison as `skill_match_similarity`
+    # but a stricter question — "is THIS skill present" rather than "is this requirement
+    # covered" — so it gets its own threshold. Sits in the measured gap between the highest
+    # false positive ("sql" covers "python" at 0.477, as does "gpu programming") and the
+    # lowest true match ("python engineering", 0.617). Nothing in the live corpus falls
+    # between: 0.50-0.60 all give zero false clears and zero wrong flags.
+    must_have_similarity: float = 0.55
     pipeline_mode: Literal["live", "recorded", "record"] = "live"
     pipeline_execution: Literal["enqueue", "inline"] = "inline"  # no Redis/worker this milestone
     pipeline_fixtures_dir: str | None = None

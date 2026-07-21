@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from specula_api.db.models import Company, Posting
 from specula_api.pipeline.deps import PipelineDeps
-from specula_api.pipeline.util import html_to_text, to_country_code
+from specula_api.pipeline.util import html_to_text, to_country_code, to_skill_tokens
 
 # A real posting page yields well over this much readable text; anything less is a shell
 # (JS-rendered board, interstitial, error page) with nothing worth extracting.
@@ -55,8 +55,8 @@ async def extract_posting(session: AsyncSession, posting: Posting, deps: Pipelin
     posting.work_mode = result.work_mode
     posting.seniority = result.seniority
     posting.education = result.education
-    posting.required_skills = result.required_skills
-    posting.nice_to_have = result.nice_to_have
+    posting.required_skills = to_skill_tokens(result.required_skills)
+    posting.nice_to_have = to_skill_tokens(result.nice_to_have)
     posting.visa = result.visa
     posting.languages = result.languages
     posting.contract = result.contract

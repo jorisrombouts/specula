@@ -99,6 +99,19 @@ On the genuinely crawled postings (`source='greenhouse'`):
 The two unchanged results are correct: that candidate has no Spark, Hadoop, Airflow,
 computer vision or NLP. The fix removes spurious flags without inventing coverage.
 
+## Upstream dependency: skill shape
+
+Matching can only be as good as extraction. Measured on the live corpus, 11% of extracted
+"skills" were requirement *sentences* ("8+ years of experience in software engineering,
+machine learning engineering, or applied AI"). A sentence embeds nowhere near a skill token,
+so no threshold can rescue it — it just inflates `overlap_total` and deflates
+`factor_skill`, reproducing the exact understatement this scoring change removed.
+
+The extraction prompt now requires atomic skill names and shows how to decompose a compound
+sentence, with `to_skill_tokens` as the deterministic guard at the write site (the same
+three-layer shape as country normalization). Re-extracting the affected postings decomposed
+all 11 without the guard needing to drop anything, taking sentence-shaped skills to 0%.
+
 ## Open: recalibration
 
 The read model's 45-point flag and the 0.6/0.4 overlap-vs-cosine blend in

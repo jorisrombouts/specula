@@ -23,6 +23,14 @@ _COUNTRY_DESC = (
     "not a single country."
 )
 
+_SKILLS_DESC = (
+    "Atomic skill names only, 1-4 words each (e.g. 'Python', 'PyTorch', 'Natural Language "
+    "Processing'). Decompose compound requirement sentences into the individual skills they "
+    "name: 'Hands-on experience with Megatron-LM/NeMo, DeepSpeed, or FSDP/ZeRO expertise' "
+    "becomes ['Megatron-LM', 'NeMo', 'DeepSpeed', 'FSDP', 'ZeRO']. Never emit a sentence, a "
+    "years-of-experience phrase, or a responsibility — those belong in other fields."
+)
+
 # ---------------------------------------------------------------------------
 # Result models (internal — snake_case, not exposed over the API directly)
 # ---------------------------------------------------------------------------
@@ -52,8 +60,8 @@ class ExtractionResult(BaseModel):
     work_mode: str | None = None
     seniority: str | None = None
     education: str | None = None
-    required_skills: list[str] = []
-    nice_to_have: list[str] = []
+    required_skills: list[str] = Field(default=[], description=_SKILLS_DESC)
+    nice_to_have: list[str] = Field(default=[], description=_SKILLS_DESC)
     visa: str | None = None
     languages: list[str] = []
     contract: str | None = None
@@ -173,7 +181,9 @@ class OpenAIResponsesClient:
                 "extraction_confidence (0-100) to reflect how much of the schema was directly "
                 "evidenced in the text rather than inferred. country and hq_country must each "
                 "be an ISO 3166-1 alpha-2 country code, uppercase (e.g. ES, DE, GB) — never a "
-                "full country name or a region; null if not a single determinable country."
+                "full country name or a region; null if not a single determinable country. "
+                "required_skills and nice_to_have must contain atomic skill names (1-4 words), "
+                "never requirement sentences — decompose a sentence into the skills it names."
             ),
             user=user,
         )

@@ -985,11 +985,13 @@ async def seed(
                 "Research Engineer",
             ],
             seniority=["Mid", "Senior", "Staff"],
-            must_haves=[
-                "Python",
-                "Production ML or applied LLM work",
-                "Remote-friendly within EU",
-            ],
+            # must_haves are SKILLS — they are matched against a posting's required skills
+            # (pipeline/score.py::_missing_must_have). Two entries used to live here that
+            # aren't skills and so red-flagged every posting in the corpus: "Remote-friendly
+            # within EU" (geography, which spec §8 puts in lenses, not Targeting) and
+            # "Production ML or applied LLM work" (a criterion about the role — now in
+            # `preferences` below, which doesn't drive scoring).
+            must_haves=["Python"],
             avoid=[
                 "Pure research / publish-or-perish",
                 "Defense primary mission",
