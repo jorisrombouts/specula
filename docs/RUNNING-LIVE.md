@@ -88,15 +88,20 @@ git status apps/api/tests/fixtures/pipeline
 git diff apps/api/tests/fixtures/pipeline
 ```
 
-Review the diff — these are now real OpenAI/ATS responses replacing the hand-authored
-placeholders. Commit them so CI's recorded-mode tests replay real shapes:
+Only the `openai/*` recordings are committed:
 
 ```
-git add apps/api/tests/fixtures/pipeline
+git add apps/api/tests/fixtures/pipeline/openai
 git commit -m "test(api): regenerate recorded pipeline fixtures from a live run"
 ```
 
-Re-run the full suite once more afterward (`cd apps/api && uv run pytest -q`) to confirm the
-existing recorded-mode tests still pass against the regenerated fixtures — a real response can
-differ in shape from the hand-authored placeholder (e.g. a field the placeholder always set that
-a real extraction sometimes leaves null), which is exactly what this run is meant to surface.
+**`http/*.json` is gitignored** — a real run mirrors every fetched page, which is hundreds of
+MB of raw ATS/company HTML. The suite never replays those: a live run records against the
+REAL urls/queries while the tests replay small hand-authored "acme" fixtures, so the two sets
+are disjoint and a live run does NOT regenerate what CI replays. The tests' own http fixtures
+are already tracked and keep working; add a new hand-authored one with `git add -f`.
+
+Re-run the full suite afterward (`cd apps/api && uv run pytest -q`). Note the live run's real
+value is proving the pipeline against real responses — pipeline contract changes it forces
+(query shape, page-text reduction, relevance gating) are what break the recorded tests, far
+more than field-level shape drift.

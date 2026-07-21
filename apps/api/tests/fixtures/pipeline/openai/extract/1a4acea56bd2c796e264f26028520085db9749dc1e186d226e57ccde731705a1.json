@@ -1,0 +1,48 @@
+{
+  "title": "Senior Data Scientist",
+  "role_family": "Data Science",
+  "city": "Madrid",
+  "country": "Spain",
+  "hq_country": "Spain",
+  "work_mode": "Onsite",
+  "seniority": "Senior",
+  "education": "Master/PhD in Computer Science, Physics, Engineering, Mathematics, Economics, etc.",
+  "required_skills": [
+    "data science",
+    "machine learning",
+    "statistical modeling",
+    "Python",
+    "SQL",
+    "data analysis",
+    "data visualization"
+  ],
+  "nice_to_have": [
+    "Probability & Statistics",
+    "scientific experimentation",
+    "peer-reviewed publishing",
+    "deep learning",
+    "time series analysis",
+    "bayesian statistics",
+    "causal inference",
+    "geo data modeling"
+  ],
+  "visa": null,
+  "languages": [],
+  "contract": null,
+  "geo": null,
+  "salary_text": "50K - 63K\u20ac",
+  "deadline_at": null,
+  "posted_at": null,
+  "responsibilities": [
+    "Propose and develop high-impact data science projects",
+    "Design, train, and validate statistical and machine learning models",
+    "Define and analyze real-life experiments",
+    "Convert team\u2019s work into business insights",
+    "Participate in research and innovation",
+    "Diffuse complex ideas to stakeholders",
+    "Participate in product development conversations",
+    "Be a technical reference within the team"
+  ],
+  "summary": "Join Cabify's Applied Science team as a Senior Data Scientist and be part of a journey to improve urban mobility and city living.",
+  "extraction_confidence": 90
+}
