@@ -1,10 +1,23 @@
-from typing import Literal
+from typing import Any, Literal
 
+from pydantic import ValidationInfo, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# An env var that is present-but-empty (`PIPELINE_MODE=` in a .env) means "not set", not
+# an invalid value — without this, sourcing such a .env crashes every entrypoint that
+# builds Settings (seed, CLI, uvicorn) with a Literal validation error.
+_BLANK_DEFAULTS = {"pipeline_mode": "live", "pipeline_execution": "inline"}
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    @field_validator("pipeline_mode", "pipeline_execution", mode="before")
+    @classmethod
+    def _blank_means_default(cls, value: Any, info: ValidationInfo) -> Any:
+        if isinstance(value, str) and not value.strip() and info.field_name is not None:
+            return _BLANK_DEFAULTS[info.field_name]
+        return value
 
     app_env: str = "development"
     database_url: str = "postgresql+asyncpg://specula_app:specula@localhost:55432/specula"
