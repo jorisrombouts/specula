@@ -695,3 +695,49 @@ async def test_generic_adapter_collapses_query_string_duplicates() -> None:
     )
 
     assert len(postings) == 1
+
+
+# --- Personio host handling -------------------------------------------------------
+
+
+async def test_personio_adapter_keeps_the_com_tld() -> None:
+    """The feed URL was hardcoded to .de, so a company discovered on jobs.personio.com was
+    sent to a .de host that isn't theirs."""
+    body = (ATS_FIXTURES_DIR / "personio" / "jobs.xml").read_text()
+    company = _CompanyStub(domain="smava.jobs.personio.com")
+    fetcher = _StubFetcher(body, content_type="text/xml")
+
+    await PersonioAdapter().list_postings(company, fetcher)
+
+    assert fetcher.calls == ["https://smava.jobs.personio.com/xml"]
+
+
+async def test_personio_adapter_still_defaults_to_de() -> None:
+    body = (ATS_FIXTURES_DIR / "personio" / "jobs.xml").read_text()
+    company = _CompanyStub(domain="smava.jobs.personio.de")
+    fetcher = _StubFetcher(body, content_type="text/xml")
+
+    await PersonioAdapter().list_postings(company, fetcher)
+
+    assert fetcher.calls == ["https://smava.jobs.personio.de/xml"]
+
+
+def test_personio_com_is_recognised_as_an_ats_host() -> None:
+    """personio.com was in neither the host tuple nor ATS_ALLOWED_DOMAINS while
+    jobs.personio.com was in both — so a bare acme.personio.com went undetected."""
+    assert detect_ats(domain=None, careers_url="https://acme.personio.com/", ats_hint=None) == (
+        "personio"
+    )
+
+
+async def test_personio_bare_host_yields_no_token_rather_than_jobs() -> None:
+    """Host suffixes are matched longest-first: against a bare https://jobs.personio.de/ the
+    short "personio.de" suffix used to win and hand back the token "jobs", which then
+    requested https://jobs.jobs.personio.de/xml."""
+    company = _CompanyStub(careers_url="https://jobs.personio.de/")
+    fetcher = _StubFetcher("<workzag-jobs></workzag-jobs>", content_type="text/xml")
+
+    with pytest.raises(BoardUnavailable):
+        await PersonioAdapter().list_postings(company, fetcher)
+
+    assert fetcher.calls == []

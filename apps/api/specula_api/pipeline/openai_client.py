@@ -12,11 +12,16 @@ from typing import Protocol, TypeVar
 from openai import AsyncOpenAI
 from openai.types.responses import Response, ResponseFunctionWebSearch, WebSearchToolParam
 from openai.types.responses.response_function_web_search import ActionSearch
-from pydantic import BaseModel, TypeAdapter
+from pydantic import BaseModel, Field, TypeAdapter
 
 from specula_api.config import Settings
 
 _EMBED_DIM = 1536
+
+_COUNTRY_DESC = (
+    "ISO 3166-1 alpha-2 country code, uppercase (e.g. ES, DE, GB); null if not stated or "
+    "not a single country."
+)
 
 # ---------------------------------------------------------------------------
 # Result models (internal — snake_case, not exposed over the API directly)
@@ -29,7 +34,7 @@ class Source(BaseModel):
 
 
 class EnrichResult(BaseModel):
-    hq_country: str | None = None
+    hq_country: str | None = Field(default=None, description=_COUNTRY_DESC)
     hq_confidence: int | None = None
     comp_estimate: str | None = None
     careers_url: str | None = None
@@ -42,8 +47,8 @@ class ExtractionResult(BaseModel):
     title: str
     role_family: str | None = None
     city: str | None = None
-    country: str | None = None
-    hq_country: str | None = None
+    country: str | None = Field(default=None, description=_COUNTRY_DESC)
+    hq_country: str | None = Field(default=None, description=_COUNTRY_DESC)
     work_mode: str | None = None
     seniority: str | None = None
     education: str | None = None
@@ -59,6 +64,12 @@ class ExtractionResult(BaseModel):
     responsibilities: list[str] = []
     summary: str = ""
     extraction_confidence: int  # 0-100
+
+
+class ApprovalWhys(BaseModel):
+    """One short sentence per candidate, in the order they were given."""
+
+    whys: list[str]
 
 
 class OpenAIClient(Protocol):
@@ -79,6 +90,8 @@ class OpenAIClient(Protocol):
     async def rationale(
         self, *, factors: dict[str, int], overlap: tuple[int, int], red_flag: str | None
     ) -> str: ...
+
+    async def approval_whys(self, descriptions: Sequence[str]) -> list[str]: ...
 
     async def aclose(self) -> None: ...
 
@@ -141,7 +154,8 @@ class OpenAIResponsesClient:
             system=(
                 "Enrich the company record below with HQ country, comp estimate, careers URL "
                 "and ATS if determinable from the page text. Leave fields null when not "
-                "evidenced — never guess."
+                "evidenced — never guess. hq_country must be an ISO 3166-1 alpha-2 country "
+                "code, uppercase (e.g. ES, DE, GB) — never a full country name or a region."
             ),
             user=user,
         )
@@ -157,7 +171,9 @@ class OpenAIResponsesClient:
             system=(
                 "Extract structured job posting fields from the page text below. Set "
                 "extraction_confidence (0-100) to reflect how much of the schema was directly "
-                "evidenced in the text rather than inferred."
+                "evidenced in the text rather than inferred. country and hq_country must each "
+                "be an ISO 3166-1 alpha-2 country code, uppercase (e.g. ES, DE, GB) — never a "
+                "full country name or a region; null if not a single determinable country."
             ),
             user=user,
         )
@@ -192,6 +208,27 @@ class OpenAIResponsesClient:
             ],
         )
         return response.choices[0].message.content or ""
+
+    async def approval_whys(self, descriptions: Sequence[str]) -> list[str]:
+        """Why each discovered company is worth a look — batched into a single call.
+
+        Discovery stages 20+ candidates per run; one call each would dominate the run's cost
+        for a single sentence apiece.
+        """
+        if not descriptions:
+            return []
+        numbered = "\n".join(f"{i + 1}. {d}" for i, d in enumerate(descriptions))
+        result = await self._structured(
+            model=self._settings.openai_rationale_model,
+            result_type=ApprovalWhys,
+            system=(
+                "For each numbered company below, write ONE short sentence on why it is worth "
+                "reviewing for a job search, grounded only in what is given. Return exactly as "
+                "many sentences as there are companies, in the same order. Do not invent facts."
+            ),
+            user=numbered,
+        )
+        return result.whys
 
     async def aclose(self) -> None:
         await self._client.close()
@@ -280,6 +317,12 @@ class RecordedOpenAIClient:
         data = self._load("rationale", key)
         assert isinstance(data, str), f"Rationale fixture for key {key!r} must be a JSON string"
         return data
+
+    async def approval_whys(self, descriptions: Sequence[str]) -> list[str]:
+        if not descriptions:
+            return []
+        key = _hash_key("\n".join(descriptions))
+        return TypeAdapter(list[str]).validate_python(self._load("why", key))
 
     async def aclose(self) -> None:
         return None
@@ -371,6 +414,12 @@ class RecordingOpenAIClient:
         result = await self._live.rationale(factors=factors, overlap=overlap, red_flag=red_flag)
         key = _hash_key(json.dumps(factors, sort_keys=True))
         self._write("rationale", key, result)
+        return result
+
+    async def approval_whys(self, descriptions: Sequence[str]) -> list[str]:
+        result = await self._live.approval_whys(descriptions)
+        if descriptions:
+            self._write("why", _hash_key("\n".join(descriptions)), result)
         return result
 
     async def aclose(self) -> None:

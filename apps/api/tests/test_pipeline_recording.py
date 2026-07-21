@@ -65,6 +65,9 @@ class _StubLiveOpenAIClient:
     async def embed(self, texts: Sequence[str]) -> list[list[float]]:
         return [[0.1, 0.2, 0.3] for _ in texts]
 
+    async def approval_whys(self, descriptions: Sequence[str]) -> list[str]:
+        raise NotImplementedError
+
     async def rationale(
         self, *, factors: dict[str, int], overlap: tuple[int, int], red_flag: str | None
     ) -> str:
