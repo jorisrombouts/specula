@@ -4,7 +4,9 @@ import json
 import math
 from collections.abc import Sequence
 from pathlib import Path
+from typing import cast
 
+import pytest
 from conftest import make_user, set_tenant
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -328,9 +330,16 @@ def _recorded_title_vec(title: str) -> list[float]:
 
     `RecordedOpenAIClient` keys embed fixtures by sha256 of the embedded text, and
     `embeddings.py` embeds the bare title — so the title alone recovers the vector.
+
+    Skips rather than erroring when the fixture is gone: record mode writes by key and
+    does not ask, so a re-record can drop these titles. That is a corpus change, and it
+    should not read as a dedup regression.
     """
     key = hashlib.sha256(title.encode("utf-8")).hexdigest()
-    return json.loads((_EMBED_FIXTURES / f"{key}.json").read_text())  # type: ignore[no-any-return]
+    path = _EMBED_FIXTURES / f"{key}.json"
+    if not path.exists():
+        pytest.skip(f"no recorded embedding for {title!r} — corpus changed, update the list")
+    return cast(list[float], json.loads(path.read_text()))
 
 
 def _cosine(a: Sequence[float], b: Sequence[float]) -> float:
@@ -363,12 +372,13 @@ def test_seniority_variants_are_not_near_identical_in_practice() -> None:
     vectors the closest seniority pair we have sits near 0.68 — well under the 0.92
     gate, which would have separated them unaided.
 
-    The guard still earns its place: one pair is not a study, the pair here is not the
-    exact one that claim named, and merging two real openings is the worst failure this
-    stage has. But it is belt-and-braces, not the only thing preventing a bad merge.
+    The guard still earns its place: one pair is not a study, the pair here differs in
+    specialization as well as seniority, and merging two real openings is the worst failure
+    this stage has. The claim this pins is only "not near-identical" — hence the single
+    loose bound. A tighter window would assert precision this measurement does not have.
     """
     similarity = _cosine(
         _recorded_title_vec("Data Scientist, Applied Science"),
         _recorded_title_vec("Senior Data Scientist"),
     )
-    assert 0.60 < similarity < 0.75
+    assert similarity < 0.85

@@ -75,7 +75,7 @@ feedback-signal weight nudging.
   seniority variants land near 0.68 rather than "near-identical" as previously claimed. Three titles
   is not a threshold study — properly characterising 0.92 needs a live embedding run over many real
   title pairs.
-- **Recorded fixtures are a curated set, not an archive.** 119 committed OpenAI shapes; the ~106
+- **Recorded fixtures are a curated set, not an archive.** 117 committed OpenAI shapes; the ~106
   additional captures from the 2026-07-21 live runs were cleared after confirming the suite stays
   green without them. Re-recording costs OpenAI credits. `fixtures/pipeline/http/*.json` is
   gitignored by design.
