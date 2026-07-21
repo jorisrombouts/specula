@@ -861,6 +861,66 @@ async def test_ingest_company_scores_extracted_postings_for_read_model(
     assert job.rationale != ""
 
 
+class _RejectsEmptyInputOpenAI(_FullStubOpenAI):
+    """`_FullStubOpenAI` delegates embed to `RecordedOpenAIClient`, which loops over `texts`
+    and so returns `[]` for `[]` without complaint. The LIVE client hands `input=` straight
+    to the embeddings endpoint, which rejects an empty array — so the recorded client hides
+    an empty-input bug rather than exposing it. This stub fails the way production does."""
+
+    async def embed(self, texts: Sequence[str]) -> list[list[float]]:
+        if not texts:
+            raise ValueError("embeddings input must not be empty (live API returns 400)")
+        return await super().embed(texts)
+
+
+@requires_db
+async def test_ingest_company_does_not_embed_when_targeting_has_no_must_haves(
+    db_session: AsyncSession,
+) -> None:
+    """`must_haves` defaults to `'{}'`, so empty is the normal state for a new user — not an
+    edge case. Embedding it unconditionally sends an empty input to the live API and kills
+    the whole run before a single posting is scored."""
+    user = await make_user(db_session)
+    await set_tenant(db_session, user.id)
+    company = Company(user_id=user.id, name="Acme", domain="acme.com")
+    db_session.add(company)
+    db_session.add(CandidateProfile(user_id=user.id, skills=["Python"]))
+    db_session.add(Targeting(user_id=user.id, role_titles=["ML Engineer"]))  # must_haves unset
+    await db_session.flush()
+    company_id = company.id
+
+    shell = Posting(
+        user_id=user.id,
+        company_id=company.id,
+        source="scrape",
+        source_url="https://acme.com/jobs/1",
+        content_hash="shell-empty-must-haves",
+    )
+    db_session.add(shell)
+    await db_session.flush()
+    posting_id = shell.id
+
+    deps = PipelineDeps(
+        openai=_RejectsEmptyInputOpenAI(
+            EnrichResult(),
+            ExtractionResult(
+                title="Senior ML Engineer", required_skills=["Python"], extraction_confidence=85
+            ),
+        ),
+        fetcher=_AnyDocFetcher(
+            FetchedDoc(url="https://acme.com/jobs/1", status=200, text=_JOB_PAGE_TEXT)
+        ),
+        settings=Settings(),
+        now=lambda: datetime(2026, 7, 5, tzinfo=UTC),
+    )
+
+    await ingest_company(db_session, user.id, company_id, deps)
+
+    score = await db_session.get(Score, posting_id)
+    assert score is not None, "the run must complete and score the posting"
+    assert score.red_flag is None, "no must-haves means nothing can be missing"
+
+
 # --- must-have coverage ---------------------------------------------------------------
 #
 # A must-have is a SKILL, matched against the posting's required skills — one register, one

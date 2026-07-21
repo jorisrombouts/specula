@@ -145,6 +145,23 @@ def test_to_skill_tokens_keeps_short_multiword_skills() -> None:
     ]
 
 
+def test_to_skill_tokens_cap_is_exactly_six_words() -> None:
+    """Pins the cap's VALUE, not just its neighbourhood.
+
+    Without this, the longest kept string in the suite is 3 words and the shortest dropped
+    is 8 — so every cap from 3 to 7 passes, and the tests say nothing about which one is
+    actually configured. Six is the corpus boundary: 88% of real skills were <= 6 words and
+    everything longer was a sentence.
+    """
+    six = "Extract Transform Load Pipeline Design Work"
+    seven = f"{six} Here"
+    assert len(six.split()) == 6
+    assert len(seven.split()) == 7
+
+    assert to_skill_tokens([six]) == [six], "6 words is at the cap and must be KEPT"
+    assert to_skill_tokens([seven]) == [], "7 words is over the cap and must be DROPPED"
+
+
 def test_to_skill_tokens_drops_requirement_sentences() -> None:
     # Verbatim from the live corpus.
     assert to_skill_tokens(
