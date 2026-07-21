@@ -33,9 +33,13 @@ class _StubOpenAI:
     under test is clearer and just as faithful to the `OpenAIClient` Protocol.
     """
 
-    def __init__(self, sources_by_query: dict[str, list[Source]]) -> None:
+    def __init__(
+        self, sources_by_query: dict[str, list[Source]], *, whys: list[str] | None = None
+    ) -> None:
         self._sources_by_query = sources_by_query
+        self._whys = whys
         self.calls: list[list[str]] = []
+        self.why_calls: list[list[str]] = []
 
     async def discover_sources(
         self, queries: Sequence[str], *, allowed_domains: Sequence[str] | None = None
@@ -45,6 +49,12 @@ class _StubOpenAI:
         for query in queries:
             results.extend(self._sources_by_query.get(query, []))
         return results
+
+    async def approval_whys(self, descriptions: Sequence[str]) -> list[str]:
+        self.why_calls.append(list(descriptions))
+        if self._whys is None:
+            raise NotImplementedError("no why stub configured")
+        return self._whys
 
     async def enrich_company(
         self, *, name: str, domain: str | None, page_text: str | None
@@ -355,3 +365,57 @@ def test_resolve_candidate_does_not_fold_subdomain_token_for_personio() -> None:
     assert candidate.domain == "smava.jobs.personio.de"
     assert candidate.ats == "personio"
     assert candidate.name == "Smava"
+
+
+# --- LLM-written why (spec §7.2) --------------------------------------------------
+
+
+async def _discover_two(db_session: AsyncSession, openai: _StubOpenAI) -> list[Approval]:
+    user = await make_user(db_session)
+    await set_tenant(db_session, user.id)
+    lens = await _seed_targeting_and_lens(db_session, user.id)
+    queries = build_seed_queries(["ML Engineer"], [lens], cap=5)
+    openai._sources_by_query = {
+        queries[0]: [
+            Source(url="https://boards.greenhouse.io/acme/jobs/1", title="Acme role"),
+            Source(url="https://jobs.lever.co/beta-corp/2", title="Beta role"),
+        ]
+    }
+    await discover(db_session, user.id, uuid4(), _deps(openai))
+    return list(
+        await db_session.scalars(
+            select(Approval).where(Approval.user_id == user.id).order_by(Approval.name)
+        )
+    )
+
+
+@requires_db
+async def test_why_is_written_by_the_model(db_session: AsyncSession) -> None:
+    openai = _StubOpenAI({}, whys=["Acme ships ML infra.", "Beta is hiring in the EU."])
+
+    approvals = await _discover_two(db_session, openai)
+
+    assert [a.why for a in approvals] == ["Acme ships ML infra.", "Beta is hiring in the EU."]
+    # ONE batched call covering both candidates, not one call each.
+    assert len(openai.why_calls) == 1
+    assert len(openai.why_calls[0]) == 2
+
+
+@requires_db
+async def test_why_falls_back_to_the_template_when_the_model_fails(
+    db_session: AsyncSession,
+) -> None:
+    """A staged approval with a plain why beats a discovery run that dies on a prose call."""
+    approvals = await _discover_two(db_session, _StubOpenAI({}, whys=None))
+
+    assert all(a.why is not None and a.why.startswith("Surfaced by the search") for a in approvals)
+
+
+@requires_db
+async def test_why_falls_back_when_the_model_returns_the_wrong_count(
+    db_session: AsyncSession,
+) -> None:
+    """Zipping a short list would silently mis-attribute one company's why to another."""
+    approvals = await _discover_two(db_session, _StubOpenAI({}, whys=["only one sentence"]))
+
+    assert all(a.why is not None and a.why.startswith("Surfaced by the search") for a in approvals)

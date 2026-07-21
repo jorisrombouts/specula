@@ -87,6 +87,7 @@ async def discover(
     existing_domains = await _existing_domains(session, user_id)
 
     found = 0
+    staged: list[_Candidate] = []
     new = 0
     errors = 0
     for query in queries:
@@ -108,20 +109,23 @@ async def discover(
             if candidate.domain in existing_domains:
                 continue
             existing_domains.add(candidate.domain)
-            session.add(
-                Approval(
-                    user_id=user_id,
-                    name=candidate.name,
-                    domain=candidate.domain,
-                    careers_url=candidate.careers_url,
-                    logo_url=favicon_url(candidate.domain),
-                    ats=candidate.ats,
-                    found_query=candidate.found_query,
-                    why=_derive_why(candidate),
-                    decision=None,
-                )
-            )
+            staged.append(candidate)
             new += 1
+
+    for candidate, why in zip(staged, await _resolve_whys(staged, deps), strict=True):
+        session.add(
+            Approval(
+                user_id=user_id,
+                name=candidate.name,
+                domain=candidate.domain,
+                careers_url=candidate.careers_url,
+                logo_url=favicon_url(candidate.domain),
+                ats=candidate.ats,
+                found_query=candidate.found_query,
+                why=why,
+                decision=None,
+            )
+        )
 
     await session.flush()
     return DiscoverResult(found=found, new=new, errors=errors)
@@ -168,6 +172,32 @@ def _path_token(path: str) -> str | None:
 
 
 def _derive_why(candidate: _Candidate) -> str:
-    # TODO: LLM-generated why — replace this templated sentence once the enrich stage can ask
-    # the model for a real rationale from the fetched company page.
+    """Fallback when the model can't be reached or answers with the wrong shape."""
     return f'Surfaced by the search "{candidate.found_query}" as "{candidate.name}".'
+
+
+def _describe(candidate: _Candidate) -> str:
+    parts = [candidate.name, f"domain {candidate.domain}"]
+    if candidate.ats:
+        parts.append(f"ATS {candidate.ats}")
+    parts.append(f'found by searching "{candidate.found_query}"')
+    return "; ".join(parts)
+
+
+async def _resolve_whys(candidates: list[_Candidate], deps: PipelineDeps) -> list[str]:
+    """An LLM-written `why` per staged approval (spec §7.2), batched into ONE call.
+
+    Discovery stages 20+ candidates per run, so a call each would dominate the run's cost for
+    one sentence apiece. Any failure — unreachable model, wrong number of sentences, a blank —
+    degrades to the templated sentence for that candidate: a staged approval with a plain why
+    is much better than a failed discovery run.
+    """
+    if not candidates:
+        return []
+    try:
+        whys = await deps.openai.approval_whys([_describe(c) for c in candidates])
+    except Exception:
+        whys = []
+    if len(whys) != len(candidates):
+        return [_derive_why(c) for c in candidates]
+    return [why.strip() or _derive_why(c) for why, c in zip(whys, candidates, strict=True)]

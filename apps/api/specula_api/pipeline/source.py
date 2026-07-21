@@ -32,6 +32,7 @@ ATS_ALLOWED_DOMAINS = (
     "jobs.personio.de",
     "jobs.personio.com",
     "personio.de",
+    "personio.com",
 )
 
 _GREENHOUSE_HOSTS = ("boards.greenhouse.io", "greenhouse.io")
@@ -40,7 +41,12 @@ _ASHBY_HOSTS = ("jobs.ashbyhq.com", "ashbyhq.com")
 _SMARTRECRUITERS_HOSTS = ("jobs.smartrecruiters.com", "smartrecruiters.com")
 _RECRUITEE_HOSTS = ("recruitee.com",)
 _WORKABLE_HOSTS = ("apply.workable.com", "workable.com")
-_PERSONIO_HOSTS = ("jobs.personio.de", "jobs.personio.com", "personio.de")
+_PERSONIO_HOSTS = (
+    "jobs.personio.de",
+    "jobs.personio.com",
+    "personio.de",
+    "personio.com",
+)
 _JOB_LINK_KEYWORDS = ("job", "career", "position", "opening")
 
 
@@ -172,11 +178,17 @@ def _leading_label_on_host(value: str | None, hosts: tuple[str, ...]) -> str | N
     host = value.lower().removeprefix("www.")
     if "://" in host:
         host = urlsplit(host).netloc
-    for suffix in hosts:
-        if host.endswith(f".{suffix}"):
-            label = host[: -(len(suffix) + 1)].split(".")[0]
-            if label:
-                return label
+    # Longest suffix first: "personio.de" would otherwise beat "jobs.personio.de" against a
+    # bare jobs.personio.de and hand back the token "jobs".
+    for suffix in sorted(hosts, key=len, reverse=True):
+        if not host.endswith(f".{suffix}"):
+            continue
+        label = host[: -(len(suffix) + 1)].split(".")[0]
+        # A "label" that reconstructs into a known board host is part of the ATS's own
+        # address, not a tenant: bare jobs.personio.de would otherwise yield "jobs" and then
+        # request https://jobs.jobs.personio.de/xml.
+        if label and f"{label}.{suffix}" not in hosts:
+            return label
     return None
 
 
@@ -362,10 +374,22 @@ class PersonioAdapter:
             raise BoardUnavailable(
                 f"no {self.ats} board token derivable for {company.domain or company.careers_url!r}"
             )
-        root = await _fetch_xml(fetcher, f"https://{token}.jobs.personio.de/xml")
+        root = await _fetch_xml(fetcher, f"https://{token}.{_personio_host(company)}/xml")
         if root is None:
             return []
         return _raw_postings(_personio_rows(root, token))
+
+
+def _personio_host(company: CompanyLike) -> str:
+    """Personio serves each tenant at <token>.jobs.personio.<tld>. The URL was hardcoded to
+    .de, sending a company discovered on jobs.personio.com to a host that isn't theirs."""
+    for value in (company.careers_url, company.domain):
+        host = (value or "").lower()
+        if "://" in host:
+            host = urlsplit(host).netloc
+        if host.endswith("personio.com"):
+            return "jobs.personio.com"
+    return "jobs.personio.de"
 
 
 def _smartrecruiters_url(job: dict[str, object]) -> str | None:
