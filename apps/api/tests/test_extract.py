@@ -14,7 +14,16 @@ from specula_api.pipeline.http import FetchedDoc
 from specula_api.pipeline.openai_client import EnrichResult, ExtractionResult, Source
 from specula_api.pipeline.util import html_to_text
 
-_PAGE_TEXT = "Senior Backend Engineer — Acme Corp\n\nWe're hiring...\n"
+# A realistic posting page: extraction now requires meaningfully readable text, so a
+# two-word stub would (correctly) be treated as an unextractable shell.
+_PAGE_TEXT = (
+    "Senior Backend Engineer at Acme Corp. We are hiring a senior backend engineer to "
+    "join our platform team in Berlin. You will design and operate distributed services, "
+    "own critical APIs end to end, and partner closely with product and data. "
+    "Requirements: five or more years building production backends, strong Python and "
+    "SQL, experience with asynchronous services and cloud infrastructure. Nice to have: "
+    "Kubernetes and event-driven architectures."
+)
 _URL = "https://boards.greenhouse.io/acme/jobs/1"
 _UNFETCHABLE_URL = "https://boards.greenhouse.io/acme/jobs/gone"
 
@@ -253,3 +262,31 @@ async def test_extract_posting_empty_page_text_gets_zero_confidence(
     assert posting.extraction_confidence == 0
     assert posting.title is not None
     assert openai.calls == []
+
+
+@requires_db
+async def test_extract_posting_skips_js_rendered_shell_with_no_readable_text(
+    db_session: AsyncSession,
+) -> None:
+    """A JS-rendered board (e.g. Ashby) answers 200 with kilobytes of SPA markup that
+    reduces to zero readable text. That is not extractable content: it must be flagged like
+    an unfetchable page rather than sent to the model, which previously hallucinated a
+    posting titled after the response schema itself."""
+    user = await make_user(db_session)
+    await set_tenant(db_session, user.id)
+    posting = await _make_posting_shell(db_session, user.id, None, _URL)
+
+    shell = (
+        "<!doctype html><html><head><title>x</title>"
+        '<script>window.__DATA__={"a":1};</script><style>.x{color:red}</style></head>'
+        '<body><div id="root"></div><script src="/bundle.js"></script></body></html>'
+    )
+    fetcher = _StubFetcher({_URL: FetchedDoc(url=_URL, status=200, text=shell)})
+    openai = _StubOpenAI(FULL_RESULT)
+
+    await extract_posting(db_session, posting, _deps(openai, fetcher))
+
+    assert posting.extraction_confidence == 0
+    assert posting.title is not None
+    assert "extractable" in posting.title
+    assert openai.calls == []  # never billed for a page with nothing to read

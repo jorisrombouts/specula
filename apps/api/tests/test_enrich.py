@@ -13,6 +13,17 @@ from specula_api.pipeline.http import FetchedDoc
 from specula_api.pipeline.openai_client import EnrichResult, ExtractionResult, Source
 from specula_api.services.run import ingest_company
 
+# A realistic posting page: extraction now requires meaningfully readable text, so a
+# two-word stub would (correctly) be treated as an unextractable shell.
+_JOB_PAGE_TEXT = (
+    "Senior Backend Engineer at Acme Corp. We are hiring a senior backend engineer to "
+    "join our platform team in Berlin. You will design and operate distributed services, "
+    "own critical APIs end to end, and partner closely with product and data. "
+    "Requirements: five or more years building production backends, strong Python and "
+    "SQL, experience with asynchronous services and cloud infrastructure. Nice to have: "
+    "Kubernetes and event-driven architectures."
+)
+
 
 class _StubFetcher:
     """Returns a fixed doc for every URL requested; records the URLs it was called with."""
@@ -288,7 +299,13 @@ async def test_ingest_company_extracts_and_embeds_shell_postings_after_fetch(
         title="Senior Backend Engineer", required_skills=["Python"], extraction_confidence=80
     )
     openai = _StubOpenAI(EnrichResult(), extract_result=extract_result)
-    fetcher = _StubFetcher(FetchedDoc(url="https://acme.com/jobs/1", status=200, text="job text"))
+    fetcher = _StubFetcher(
+        FetchedDoc(
+            url="https://acme.com/jobs/1",
+            status=200,
+            text=_JOB_PAGE_TEXT,
+        )
+    )
 
     await ingest_company(db_session, user.id, company_id, _deps(openai, fetcher))
 
@@ -336,7 +353,13 @@ async def test_ingest_company_caps_llm_extraction_at_ingest_max_postings(
         title="Senior Backend Engineer", required_skills=["Python"], extraction_confidence=80
     )
     openai = _StubOpenAI(EnrichResult(), extract_result=extract_result)
-    fetcher = _StubFetcher(FetchedDoc(url="https://acme.com/jobs/0", status=200, text="job text"))
+    fetcher = _StubFetcher(
+        FetchedDoc(
+            url="https://acme.com/jobs/0",
+            status=200,
+            text=_JOB_PAGE_TEXT,
+        )
+    )
     deps = PipelineDeps(
         openai=openai,
         fetcher=fetcher,
