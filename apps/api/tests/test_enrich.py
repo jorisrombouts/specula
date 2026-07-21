@@ -128,6 +128,26 @@ async def test_enrich_company_prefers_llm_values_and_detects_ats(
 
 
 @requires_db
+async def test_enrich_company_normalizes_full_country_name_to_alpha2(
+    db_session: AsyncSession,
+) -> None:
+    """The LLM sometimes emits a full country name rather than the alpha-2 code every
+    consumer expects — enrich_company must normalize before it reaches the Company."""
+    user = await make_user(db_session)
+    await set_tenant(db_session, user.id)
+    company = Company(user_id=user.id, name="Acme", domain="acme.com")
+    db_session.add(company)
+    await db_session.flush()
+
+    openai = _StubOpenAI(EnrichResult(hq_country="Spain"))
+    fetcher = _StubFetcher(FetchedDoc(url="https://acme.com", status=200, text="hello"))
+
+    result = await enrich_company(company, _deps(openai, fetcher))
+
+    assert result.hq_country == "ES"
+
+
+@requires_db
 async def test_enrich_company_passes_html_reduced_page_text_to_llm(
     db_session: AsyncSession,
 ) -> None:
@@ -224,6 +244,27 @@ async def test_ingest_company_applies_enrichment_and_defaults_logo_to_favicon(
     assert refreshed.careers_url == "https://acme.com/careers"
     assert refreshed.ats == "greenhouse"
     assert refreshed.logo_url == "https://icons.duckduckgo.com/ip3/acme.com.ico"
+
+
+@requires_db
+async def test_ingest_company_stores_normalized_hq_country(db_session: AsyncSession) -> None:
+    """End-to-end through `_apply_enrichment`: a full country name from the LLM must land on
+    `Company.hq_country` as the normalized alpha-2 code, not the raw name."""
+    user = await make_user(db_session)
+    await set_tenant(db_session, user.id)
+    company = Company(user_id=user.id, name="Acme", domain="acme.com")
+    db_session.add(company)
+    await db_session.flush()
+    company_id = company.id
+
+    openai = _StubOpenAI(EnrichResult(hq_country="Spain"))
+    fetcher = _StubFetcher(FetchedDoc(url="https://acme.com", status=404, text=""))
+
+    await ingest_company(db_session, user.id, company_id, _deps(openai, fetcher))
+
+    refreshed = await db_session.get(Company, company_id)
+    assert refreshed is not None
+    assert refreshed.hq_country == "ES"
 
 
 @requires_db

@@ -7,12 +7,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from test_db import requires_db
 
 from specula_api.config import Settings
-from specula_api.db.models import Company, Posting
+from specula_api.db.models import Company, Lens, Posting
 from specula_api.pipeline.deps import PipelineDeps
 from specula_api.pipeline.extract import extract_posting
 from specula_api.pipeline.http import FetchedDoc
 from specula_api.pipeline.openai_client import EnrichResult, ExtractionResult, Source
 from specula_api.pipeline.util import html_to_text
+from specula_api.services.lens_filter import lens_where
 
 # A realistic posting page: extraction now requires meaningfully readable text, so a
 # two-word stub would (correctly) be treated as an unextractable shell.
@@ -293,3 +294,72 @@ async def test_extract_posting_skips_js_rendered_shell_with_no_readable_text(
     assert posting.title is not None
     assert "extractable" in posting.title
     assert openai.calls == []  # never billed for a page with nothing to read
+
+
+# --- country normalization -------------------------------------------------------
+
+
+@requires_db
+async def test_extract_posting_normalizes_full_country_name_to_alpha2(
+    db_session: AsyncSession,
+) -> None:
+    """The LLM sometimes emits a full country name rather than the alpha-2 code every
+    consumer (lens_filter, the flag emoji, foreign-HQ comparisons) expects. `extract_posting`
+    must normalize on write so the stored value is always canonical."""
+    user = await make_user(db_session)
+    await set_tenant(db_session, user.id)
+    posting = await _make_posting_shell(db_session, user.id, None, _URL)
+
+    fetcher = _StubFetcher({_URL: FetchedDoc(url=_URL, status=200, text=_PAGE_TEXT)})
+    result = FULL_RESULT.model_copy(update={"country": "Spain", "hq_country": "United Kingdom"})
+    openai = _StubOpenAI(result)
+
+    await extract_posting(db_session, posting, _deps(openai, fetcher))
+
+    assert posting.country == "ES"
+    assert posting.hq_country == "GB"
+
+
+@requires_db
+async def test_extract_posting_keeps_a_correct_alpha2_code(db_session: AsyncSession) -> None:
+    user = await make_user(db_session)
+    await set_tenant(db_session, user.id)
+    posting = await _make_posting_shell(db_session, user.id, None, _URL)
+
+    fetcher = _StubFetcher({_URL: FetchedDoc(url=_URL, status=200, text=_PAGE_TEXT)})
+    openai = _StubOpenAI(FULL_RESULT)  # country="DE", hq_country="US" — already alpha-2
+
+    await extract_posting(db_session, posting, _deps(openai, fetcher))
+
+    assert posting.country == "DE"
+    assert posting.hq_country == "US"
+
+
+@requires_db
+async def test_extract_posting_with_full_country_name_now_matches_its_lens(
+    db_session: AsyncSession,
+) -> None:
+    """Regression test for the bug this normalization fixes: a posting extracted with
+    country="Spain" used to be invisible to a lens scoped to `scope="ES"`, because
+    `lens_filter._scope_predicate` does a literal `Posting.country == "ES"` — comparing a
+    country code against a full name never matched, so every location-scoped lens silently
+    dropped all real crawled postings. With normalization on write, the same posting is now
+    returned."""
+    user = await make_user(db_session)
+    await set_tenant(db_session, user.id)
+    posting = await _make_posting_shell(db_session, user.id, None, _URL)
+
+    fetcher = _StubFetcher({_URL: FetchedDoc(url=_URL, status=200, text=_PAGE_TEXT)})
+    result = FULL_RESULT.model_copy(update={"country": "Spain"})
+    openai = _StubOpenAI(result)
+
+    await extract_posting(db_session, posting, _deps(openai, fetcher))
+
+    spain_lens = Lens(user_id=user.id, name="Spain", scope="ES", is_default=False)
+    matched = (
+        await db_session.scalars(
+            select(Posting).where(Posting.id == posting.id, *lens_where(spain_lens))
+        )
+    ).all()
+
+    assert matched == [posting]
