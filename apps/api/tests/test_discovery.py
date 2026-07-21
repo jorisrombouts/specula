@@ -140,6 +140,30 @@ async def test_discover_writes_new_approvals_for_resolved_candidates(
 
 
 @requires_db
+async def test_discover_records_the_real_careers_url_on_the_approval(
+    db_session: AsyncSession,
+) -> None:
+    """The discovered URL is the only true careers URL we ever get.
+
+    Dropping it left enrich to guess `https://{domain}` — and for path-token ATSes that domain
+    is fabricated by _resolve_candidate (acme.boards.greenhouse.io), which does not resolve, so
+    enrich ran with no page text and the model guessed every field from the name alone.
+    """
+    user = await make_user(db_session)
+    await set_tenant(db_session, user.id)
+    lens = await _seed_targeting_and_lens(db_session, user.id)
+    queries = build_seed_queries(["ML Engineer"], [lens], cap=5)
+    url = "https://boards.greenhouse.io/acme/jobs/123"
+    deps = _deps(_StubOpenAI({queries[0]: [Source(url=url, title="Acme role")]}))
+
+    await discover(db_session, user.id, uuid4(), deps)
+
+    approval = await db_session.scalar(select(Approval).where(Approval.user_id == user.id))
+    assert approval is not None
+    assert approval.careers_url == url
+
+
+@requires_db
 async def test_discover_is_idempotent_on_rerun(db_session: AsyncSession) -> None:
     user = await make_user(db_session)
     await set_tenant(db_session, user.id)

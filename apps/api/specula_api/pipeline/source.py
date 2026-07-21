@@ -398,7 +398,7 @@ class GenericHtmlAdapter:
     async def list_postings(self, company: CompanyLike, fetcher: Fetcher) -> list[RawPosting]:
         careers_url = company.careers_url
         if not careers_url:
-            return []
+            raise BoardUnavailable(f"no careers_url to scrape for {company.domain!r}")
         try:
             doc = await fetcher.get(careers_url, accept="text/html")
         except Disallowed as exc:

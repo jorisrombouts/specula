@@ -18,14 +18,24 @@ from specula_api.db.models import Company, Posting
 from specula_api.pipeline.deps import PipelineDeps
 from specula_api.pipeline.util import html_to_text
 
+# A real posting page yields well over this much readable text; anything less is a shell
+# (JS-rendered board, interstitial, error page) with nothing worth extracting.
+_MIN_EXTRACTABLE_CHARS = 200
+
 
 async def extract_posting(session: AsyncSession, posting: Posting, deps: PipelineDeps) -> None:
     """Re-fetch the posting page (no stored HTML), LLM-extract structured fields onto the
     Posting. Salary only if explicitly stated (never invented). Low extraction_confidence
     still stored (surfaced-not-trusted, excluded from Insights) — don't drop the posting."""
     doc = await deps.fetcher.get(posting.source_url)
-    if doc.status != 200 or not doc.text.strip():
-        posting.title = f"(unfetched) {posting.source_url}"
+    # Guard on the REDUCED text, not the raw response. A JS-rendered board (Ashby returns a
+    # ~7KB SPA shell with zero readable text) is a 200 with plenty of bytes but nothing to
+    # extract — sending that to the model produced hallucinated postings titled after the
+    # response schema itself. No extractable content is the same as no page: flag it, skip
+    # the (wasted, billable) call.
+    page_text = html_to_text(doc.text) if doc.status == 200 else ""
+    if len(page_text.strip()) < _MIN_EXTRACTABLE_CHARS:
+        posting.title = f"(no extractable content) {posting.source_url}"
         posting.extraction_confidence = 0
         await session.flush()
         return
@@ -35,9 +45,7 @@ async def extract_posting(session: AsyncSession, posting: Posting, deps: Pipelin
         company = await session.get(Company, posting.company_id)
         company_name = company.name if company else None
 
-    result = await deps.openai.extract_posting(
-        page_text=html_to_text(doc.text), company_name=company_name
-    )
+    result = await deps.openai.extract_posting(page_text=page_text, company_name=company_name)
 
     posting.title = result.title
     posting.role_family = result.role_family

@@ -591,10 +591,12 @@ async def test_generic_html_adapter_raises_on_fixture_miss() -> None:
         await GenericHtmlAdapter().list_postings(company, fetcher)
 
 
-async def test_generic_html_adapter_returns_empty_without_careers_url() -> None:
+async def test_generic_html_adapter_raises_without_careers_url() -> None:
+    """Same class as the ATS token guards: nothing was fetched, so [] would claim the page was
+    read and lists no jobs — retiring every posting the company has."""
     company = _CompanyStub()
-    postings = await GenericHtmlAdapter().list_postings(company, RecordedFetcher(FIXTURES_DIR))
-    assert postings == []
+    with pytest.raises(BoardUnavailable):
+        await GenericHtmlAdapter().list_postings(company, RecordedFetcher(FIXTURES_DIR))
 
 
 # --- board-token derivation must be host-verified -------------------------------

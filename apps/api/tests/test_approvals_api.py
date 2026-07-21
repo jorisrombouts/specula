@@ -58,6 +58,7 @@ _LIGHTHOUSE = {
     "logo_url": "https://icons.duckduckgo.com/ip3/lighthouse.app.ico",
     "ats": "greenhouse",
     "hq_country": "NL",
+    "careers_url": "https://boards.greenhouse.io/lighthouse",
     "found_query": "machine learning amsterdam scaleup",
     "why": "NL-local ML team.",
     "open_roles": 3,
@@ -136,6 +137,8 @@ async def test_approve_creates_company_and_removes_from_queue(migrated_db: None)
     assert company.logo_url == _LIGHTHOUSE["logo_url"]
     assert company.ats == "greenhouse"
     assert company.hq_country == "NL"
+    # Carried through so enrich fetches the REAL page instead of guessing from the domain.
+    assert company.careers_url == _LIGHTHOUSE["careers_url"]
 
 
 @requires_db
@@ -167,7 +170,10 @@ async def test_approve_triggers_inline_company_ingest(migrated_db: None) -> None
     # tests/fixtures/pipeline/openai/enrich/lighthouse.app.json.
     assert company.hq_confidence == 92
     assert company.comp_estimate == "€70k-€95k, NL market"
-    assert company.careers_url == "https://lighthouse.app/careers"
+    # careers_url is the exception: the approval already carried the URL discovery observed,
+    # so enrichment must not replace it with the model's guess (the fixture offers
+    # "https://lighthouse.app/careers"). It only fills the field when it's empty.
+    assert company.careers_url == _LIGHTHOUSE["careers_url"]
 
 
 @requires_db

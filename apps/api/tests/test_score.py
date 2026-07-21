@@ -30,6 +30,18 @@ from specula_api.pipeline.score import cosine, ensure_candidate_vectors, score_p
 from specula_api.services.jobs import get_job
 from specula_api.services.run import ingest_company
 
+# A realistic posting page: extraction now requires meaningfully readable text, so a
+# two-word stub would (correctly) be treated as an unextractable shell.
+_JOB_PAGE_TEXT = (
+    "Senior Backend Engineer at Acme Corp. We are hiring a senior backend engineer to "
+    "join our platform team in Berlin. You will design and operate distributed services, "
+    "own critical APIs end to end, and partner closely with product and data. "
+    "Requirements: five or more years building production backends, strong Python and "
+    "SQL, experience with asynchronous services and cloud infrastructure. Nice to have: "
+    "Kubernetes and event-driven architectures."
+)
+
+
 FIXTURES_DIR = Path(__file__).parent / "fixtures" / "pipeline"
 
 
@@ -570,7 +582,13 @@ async def test_ingest_company_scores_extracted_postings_for_read_model(
         extraction_confidence=85,
     )
     openai = _FullStubOpenAI(EnrichResult(), extract_result)
-    fetcher = _AnyDocFetcher(FetchedDoc(url="https://acme.com/jobs/1", status=200, text="job text"))
+    fetcher = _AnyDocFetcher(
+        FetchedDoc(
+            url="https://acme.com/jobs/1",
+            status=200,
+            text=_JOB_PAGE_TEXT,
+        )
+    )
     deps = PipelineDeps(
         openai=openai,
         fetcher=fetcher,

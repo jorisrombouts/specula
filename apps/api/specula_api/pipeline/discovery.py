@@ -113,6 +113,7 @@ async def discover(
                     user_id=user_id,
                     name=candidate.name,
                     domain=candidate.domain,
+                    careers_url=candidate.careers_url,
                     logo_url=favicon_url(candidate.domain),
                     ats=candidate.ats,
                     found_query=candidate.found_query,

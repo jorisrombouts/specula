@@ -17,6 +17,10 @@ class Approval(Base):
     user_id: Mapped[uuid.UUID] = user_fk()
     name: Mapped[str | None] = mapped_column(Text, nullable=True)
     domain: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # The URL discovery actually found. `domain` is fabricated for path-token ATSes
+    # (acme.boards.greenhouse.io) and does not resolve, so this is the only address enrich can
+    # fetch a real page from — without it the model guesses every field from the name.
+    careers_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     logo_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     ats: Mapped[str | None] = mapped_column(Text, nullable=True)
     hq_country: Mapped[str | None] = mapped_column(Text, nullable=True)

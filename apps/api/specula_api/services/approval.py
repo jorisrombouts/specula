@@ -52,6 +52,7 @@ async def _add_to_registry(session: AsyncSession, user_id: UUID, approval: Appro
         user_id=user_id,
         name=approval.name or approval.domain or "Unknown",
         domain=approval.domain,
+        careers_url=approval.careers_url,
         logo_url=approval.logo_url,
         ats=approval.ats,
         hq_country=approval.hq_country,
