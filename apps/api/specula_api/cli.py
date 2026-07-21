@@ -9,6 +9,7 @@ real `OPENAI_API_KEY` to prove the live path and regenerate recorded fixtures �
 
 import argparse
 import asyncio
+from collections.abc import Sequence
 from uuid import UUID
 
 from sqlalchemy import select
@@ -17,15 +18,30 @@ from specula_api.config import settings
 from specula_api.db.models import Approval, Posting, Score, User
 from specula_api.db.session import async_session, tenant_session
 from specula_api.pipeline.deps import PipelineDeps, build_deps
+from specula_api.pipeline.source import detect_ats
 from specula_api.seed import DEMO_GOOGLE_SUB
 from specula_api.services.approval import apply_decision
 from specula_api.services.run import create_run, ingest_company, run_discovery
 
 
+def first_ingestable(approvals: Sequence[Approval]) -> Approval | None:
+    """The first approval whose domain a board adapter can actually resolve a listing from.
+
+    `Approval.ats` is only a hint: a seeded row can claim "greenhouse" while carrying the
+    company's OWN domain (lighthouse.app), from which no board token can be derived — the
+    adapter returns [] and the ingest reports success having done nothing. Re-detecting from
+    the domain alone is exactly the condition the adapters need.
+    """
+    for approval in approvals:
+        if detect_ats(domain=approval.domain, careers_url=None, ats_hint=None) is not None:
+            return approval
+    return None
+
+
 def _require_api_key() -> None:
     if not settings.openai_api_key:
         raise SystemExit(
-            "OPENAI_API_KEY is not set. Export it before running the live pipeline, e.g.:\n"
+            "OPENAI_API_KEY is not set. Put it in the repo-root .env, or export it, e.g.:\n"
             "  OPENAI_API_KEY=sk-... PIPELINE_MODE=record just prove-live"
         )
 
@@ -40,7 +56,11 @@ async def _demo_user_id() -> UUID:
 
 def _print_postings(postings: list[Posting], scores: dict[UUID, Score | None]) -> None:
     if not postings:
-        print("  (no postings extracted)")
+        # Distinguish the two real causes — a bare "none" reads as a successful empty run.
+        print(
+            "  (none — the board returned no listings (a company domain rather than an ATS "
+            "host resolves to no board), or no listing title matched the profile's role titles)"
+        )
         return
     for posting in postings:
         score = scores.get(posting.id)
@@ -137,19 +157,29 @@ async def cmd_prove_live() -> None:
 
             # ONE company only — cost guardrail (discovery is already capped at
             # settings.discovery_max_searches queries; ingest doesn't fan out further).
-            approval = await session.scalar(
-                select(Approval)
-                .where(
-                    Approval.user_id == user_id,
-                    Approval.decision.is_(None),
-                    Approval.ats.is_not(None),
-                )
-                .order_by(Approval.created_at)
+            candidates = list(
+                (
+                    await session.scalars(
+                        select(Approval)
+                        .where(
+                            Approval.user_id == user_id,
+                            Approval.decision.is_(None),
+                            Approval.ats.is_not(None),
+                        )
+                        .order_by(Approval.created_at)
+                    )
+                ).all()
             )
+            approval = first_ingestable(candidates)
             if approval is None:
-                raise SystemExit("Discovery found no ATS-detected approvals — nothing to ingest.")
+                raise SystemExit(
+                    f"None of the {len(candidates)} undecided ATS-flagged approval(s) has a "
+                    "domain a board adapter can resolve — they carry company domains (e.g. "
+                    "lighthouse.app), not ATS hosts, so ingesting one would yield 0 postings. "
+                    "Run `just live-discover` to stage real ATS-host approvals first."
+                )
 
-            print(f"Ingesting first ATS-detected approval: {approval.name} ({approval.domain})")
+            print(f"Ingesting first ingestable approval: {approval.name} ({approval.domain})")
             decided = await apply_decision(session, user_id, approval.id, "approve")
             assert decided is not None
             _approval, company_id = decided

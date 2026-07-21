@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 from pydantic import ValidationError
 
@@ -39,3 +41,15 @@ def test_invalid_non_blank_pipeline_mode_still_raises() -> None:
     # The blank-means-default carve-out must not swallow genuinely bad values.
     with pytest.raises(ValidationError):
         Settings(pipeline_mode="bogus")  # type: ignore[arg-type]
+
+
+def test_env_file_includes_the_repo_root_absolutely_not_just_cwd_relative() -> None:
+    """`.env` lives at the repo root, but every `just` recipe runs from `apps/api`, so a
+    CWD-relative ".env" resolves to a file that doesn't exist — OPENAI_API_KEY silently loads
+    as "" and the live CLI dies on its key check even though the key IS configured."""
+    configured = Settings.model_config.get("env_file")
+    entries = configured if isinstance(configured, (list, tuple)) else [configured]
+    paths = [Path(str(entry)) for entry in entries if entry is not None]
+    repo_root = Path(__file__).resolve().parents[3]
+
+    assert any(p.is_absolute() and p == repo_root / ".env" for p in paths), paths

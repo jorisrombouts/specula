@@ -1,7 +1,14 @@
+from pathlib import Path
 from typing import Any, Literal
 
 from pydantic import ValidationInfo, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# `.env` lives at the repo root, but the entrypoints run from `apps/api` (every `just` recipe
+# cds there), so a CWD-relative ".env" resolves to a file that isn't there and the real keys
+# load as "". Read the repo-root file by absolute path; a CWD-local `.env` still wins over it
+# (the per-worktree `apps/api/.env` files the fan-out lanes use keep working).
+_REPO_ROOT = Path(__file__).resolve().parents[3]
 
 # An env var that is present-but-empty (`PIPELINE_MODE=` in a .env) means "not set", not
 # an invalid value — without this, sourcing such a .env crashes every entrypoint that
@@ -10,7 +17,7 @@ _BLANK_DEFAULTS = {"pipeline_mode": "live", "pipeline_execution": "inline"}
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_file=(_REPO_ROOT / ".env", ".env"), extra="ignore")
 
     @field_validator("pipeline_mode", "pipeline_execution", mode="before")
     @classmethod
