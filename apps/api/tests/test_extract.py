@@ -12,6 +12,7 @@ from specula_api.pipeline.deps import PipelineDeps
 from specula_api.pipeline.extract import extract_posting
 from specula_api.pipeline.http import FetchedDoc
 from specula_api.pipeline.openai_client import EnrichResult, ExtractionResult, Source
+from specula_api.pipeline.util import html_to_text
 
 _PAGE_TEXT = "Senior Backend Engineer — Acme Corp\n\nWe're hiring...\n"
 _URL = "https://boards.greenhouse.io/acme/jobs/1"
@@ -156,7 +157,9 @@ async def test_extract_posting_applies_all_fields_from_result(db_session: AsyncS
     assert posting.source == "greenhouse"
     assert posting.still_open is True
     assert fetcher.calls == [_URL]
-    assert openai.calls == [{"page_text": _PAGE_TEXT, "company_name": "Acme"}]
+    # The fetched page is reduced via html_to_text() before it reaches the LLM — raw HTML
+    # overflowed the 128k context on a real run (context_length_exceeded).
+    assert openai.calls == [{"page_text": html_to_text(_PAGE_TEXT), "company_name": "Acme"}]
 
 
 @requires_db
@@ -172,7 +175,7 @@ async def test_extract_posting_passes_none_company_name_when_no_company(
 
     await extract_posting(db_session, posting, _deps(openai, fetcher))
 
-    assert openai.calls == [{"page_text": _PAGE_TEXT, "company_name": None}]
+    assert openai.calls == [{"page_text": html_to_text(_PAGE_TEXT), "company_name": None}]
 
 
 @requires_db

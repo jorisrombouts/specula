@@ -6,11 +6,12 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from specula_api.config import Settings
-from specula_api.pipeline.http import Fetcher, PoliteFetcher, RecordedFetcher
+from specula_api.pipeline.http import Fetcher, PoliteFetcher, RecordedFetcher, RecordingFetcher
 from specula_api.pipeline.openai_client import (
     OpenAIClient,
     OpenAIResponsesClient,
     RecordedOpenAIClient,
+    RecordingOpenAIClient,
 )
 
 # apps/api/tests/fixtures/pipeline — used for "recorded" mode when settings.pipeline_fixtures_dir
@@ -51,8 +52,22 @@ def build_recorded_deps(
     )
 
 
+def build_record_deps(settings: Settings, fixtures_dir: Path) -> PipelineDeps:
+    """Live clients wrapped to mirror each result into `fixtures_dir` — a live run that also
+    regenerates the fixtures a "recorded" run/CI replays. See `RecordingOpenAIClient`/
+    `RecordingFetcher`."""
+    return PipelineDeps(
+        openai=RecordingOpenAIClient(OpenAIResponsesClient(settings), fixtures_dir),
+        fetcher=RecordingFetcher(PoliteFetcher(settings), fixtures_dir),
+        settings=settings,
+        now=lambda: datetime.now(tz=UTC),
+    )
+
+
 def build_deps(settings: Settings) -> PipelineDeps:
+    fixtures_dir = Path(settings.pipeline_fixtures_dir or DEFAULT_FIXTURES_DIR)
     if settings.pipeline_mode == "recorded":
-        fixtures_dir = Path(settings.pipeline_fixtures_dir or DEFAULT_FIXTURES_DIR)
         return build_recorded_deps(settings, fixtures_dir)
+    if settings.pipeline_mode == "record":
+        return build_record_deps(settings, fixtures_dir)
     return build_live_deps(settings)

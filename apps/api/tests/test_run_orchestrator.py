@@ -79,7 +79,7 @@ async def test_run_discovery_transitions_queued_to_done_and_persists_stats(
     deps = _deps(
         _StubOpenAI(
             {
-                "ML Engineer fintech Remote EU": [
+                "ML Engineer jobs Remote EU": [
                     Source(url="https://boards.greenhouse.io/acme/jobs/123", title="Acme role")
                 ]
             }

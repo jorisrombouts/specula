@@ -57,7 +57,12 @@ class PoliteFetcher:
             raise Disallowed(url)
 
         await self._throttle(host)
-        response = await self._get_with_retry(url, accept)
+        try:
+            response = await self._get_with_retry(url, accept)
+        except httpx.HTTPError:
+            # Dead host, DNS failure, timeout, connection reset — a crawler skips a
+            # bad URL, it never crashes the run. Downstream treats non-200 as "no page".
+            return FetchedDoc(url=url, status=0, text="")
         return FetchedDoc(
             url=str(response.url),
             status=response.status_code,
@@ -134,3 +139,26 @@ class RecordedFetcher:
 
     async def aclose(self) -> None:
         return None
+
+
+class RecordingFetcher:
+    """Wraps a live `Fetcher` and writes every response to
+    `<fixtures_dir>/http/<sha256(url)>.json`, the exact key scheme `RecordedFetcher` reads from.
+    Used by pipeline_mode="record" so a live run regenerates the committed fixtures for a later
+    "recorded" run/CI to replay deterministically. A `Disallowed` raise from the live fetcher
+    propagates unrecorded — there's no response to save, and that's consistent with a replay
+    miss (RecordedFetcher returns a synthetic 404 rather than raising)."""
+
+    def __init__(self, live: Fetcher, fixtures_dir: str | Path) -> None:
+        self._live = live
+        self._dir = Path(fixtures_dir) / "http"
+
+    async def get(self, url: str, *, accept: str = "text/html") -> FetchedDoc:
+        doc = await self._live.get(url, accept=accept)
+        path = self._dir / f"{hashlib.sha256(url.encode('utf-8')).hexdigest()}.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(doc.model_dump(), indent=2) + "\n")
+        return doc
+
+    async def aclose(self) -> None:
+        await self._live.aclose()

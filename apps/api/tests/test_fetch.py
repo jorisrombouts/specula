@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from test_db import requires_db
 
 from specula_api.config import Settings
-from specula_api.db.models import Company, Posting
+from specula_api.db.models import Company, Posting, Targeting
 from specula_api.pipeline.content_hash import content_hash
 from specula_api.pipeline.deps import PipelineDeps
 from specula_api.pipeline.fetch import FetchResult, fetch_postings
@@ -238,3 +238,76 @@ async def test_fetch_postings_is_tenant_scoped(
 
     await set_tenant(db_session, owner.id)
     assert len((await db_session.scalars(select(Posting))).all()) == 1
+
+
+@requires_db
+async def test_fetch_postings_drops_raws_whose_title_does_not_match_target_role_titles(
+    db_session: AsyncSession, stub_resolve_adapter: list[_StubAdapter]
+) -> None:
+    """The relevance gate (title_matches_roles) runs before shells are written: a big board is
+    narrowed to the user's target roles, so an irrelevant feed title never becomes a Posting
+    row at all (not just excluded downstream)."""
+    user = await make_user(db_session)
+    await set_tenant(db_session, user.id)
+    company = await _make_company(db_session, user.id)
+    db_session.add(Targeting(user_id=user.id, role_titles=["Engineer"]))
+    await db_session.flush()
+    # RAW_A's title "Engineer" matches; RAW_B's title "Designer" does not.
+    stub_resolve_adapter[0] = _StubAdapter([RAW_A, RAW_B])
+    now = datetime(2026, 7, 5, tzinfo=UTC)
+
+    result = await fetch_postings(db_session, user.id, company, _deps(now))
+
+    assert result == FetchResult(found=1, new=1, closed=0, errors=0)
+    postings = (await db_session.scalars(select(Posting).where(Posting.user_id == user.id))).all()
+    assert len(postings) == 1
+    assert postings[0].source_url == RAW_A.source_url
+
+
+@requires_db
+async def test_fetch_postings_does_not_close_still_listed_postings_when_targeting_narrows(
+    db_session: AsyncSession, stub_resolve_adapter: list[_StubAdapter]
+) -> None:
+    """The relevance gate decides what gets EXTRACTED, not what counts as still on the board.
+
+    `seen_hashes` must come from the UNFILTERED board listing: narrowing role_titles retires
+    postings the board still advertises otherwise, reporting them as closed openings.
+    """
+    user = await make_user(db_session)
+    await set_tenant(db_session, user.id)
+    company = await _make_company(db_session, user.id)
+    db_session.add(Targeting(user_id=user.id, role_titles=["Engineer", "Designer"]))
+    await db_session.flush()
+    stub_resolve_adapter[0] = _StubAdapter([RAW_A, RAW_B])
+    await fetch_postings(db_session, user.id, company, _deps(datetime(2026, 7, 5, tzinfo=UTC)))
+
+    # The user narrows their targeting. The board still lists BOTH roles.
+    targeting = await db_session.get(Targeting, user.id)
+    assert targeting is not None
+    targeting.role_titles = ["Engineer"]
+    await db_session.flush()
+
+    result = await fetch_postings(
+        db_session, user.id, company, _deps(datetime(2026, 7, 6, tzinfo=UTC))
+    )
+
+    assert result.closed == 0
+    postings = (await db_session.scalars(select(Posting).where(Posting.user_id == user.id))).all()
+    assert [p.still_open for p in postings] == [True, True]
+
+
+@requires_db
+async def test_fetch_postings_keeps_all_raws_without_targeting(
+    db_session: AsyncSession, stub_resolve_adapter: list[_StubAdapter]
+) -> None:
+    """No Targeting row at all (never onboarded) → nothing to filter against, so every raw
+    posting is still written as a shell."""
+    user = await make_user(db_session)
+    await set_tenant(db_session, user.id)
+    company = await _make_company(db_session, user.id)
+    stub_resolve_adapter[0] = _StubAdapter([RAW_A, RAW_B])
+    now = datetime(2026, 7, 5, tzinfo=UTC)
+
+    result = await fetch_postings(db_session, user.id, company, _deps(now))
+
+    assert result == FetchResult(found=2, new=2, closed=0, errors=0)

@@ -1,0 +1,70 @@
+{
+  "offset": 0,
+  "limit": 100,
+  "totalFound": 1063,
+  "content": [
+    {
+      "id": "744000138833829",
+      "name": "Product Manager - Customer Data Platform, Tech Foundations",
+      "refNumber": "JR0083065",
+      "company": {
+        "identifier": "DeliveryHero",
+        "name": "Delivery Hero"
+      },
+      "releasedDate": "2026-07-21T10:18:21.123Z",
+      "location": {
+        "city": "Berlin",
+        "country": "de",
+        "remote": false,
+        "fullLocation": "Berlin, , Germany"
+      },
+      "typeOfEmployment": {
+        "id": "permanent",
+        "label": "Full-time"
+      },
+      "visibility": "PUBLIC"
+    },
+    {
+      "id": "744000138835749",
+      "name": "Associate, Business Manager",
+      "refNumber": "JR0083242",
+      "company": {
+        "identifier": "DeliveryHero",
+        "name": "Delivery Hero"
+      },
+      "releasedDate": "2026-07-21T10:24:50.389Z",
+      "location": {
+        "city": "Karachi",
+        "country": "pk",
+        "remote": false,
+        "fullLocation": "Karachi, , Pakistan"
+      },
+      "typeOfEmployment": {
+        "id": "permanent",
+        "label": "Full-time"
+      },
+      "visibility": "PUBLIC"
+    },
+    {
+      "id": "744000138830053",
+      "name": "Specialist, Demand Planning",
+      "refNumber": "JR0083231",
+      "company": {
+        "identifier": "DeliveryHero",
+        "name": "Delivery Hero"
+      },
+      "releasedDate": "2026-07-21T10:01:42.385Z",
+      "location": {
+        "city": "Lahore",
+        "country": "pk",
+        "remote": false,
+        "fullLocation": "Lahore, , Pakistan"
+      },
+      "typeOfEmployment": {
+        "id": "permanent",
+        "label": "Full-time"
+      },
+      "visibility": "PUBLIC"
+    }
+  ]
+}

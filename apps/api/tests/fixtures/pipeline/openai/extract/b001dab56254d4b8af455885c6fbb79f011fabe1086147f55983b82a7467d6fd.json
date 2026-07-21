@@ -1,0 +1,46 @@
+{
+  "title": "Data Scientist, Applied Science",
+  "role_family": "Data Science",
+  "city": "Madrid",
+  "country": "Spain",
+  "hq_country": "Spain",
+  "work_mode": "Onsite",
+  "seniority": "Mid-level",
+  "education": "Masters in Computer Science, Physics, Engineering, Mathematics, Economics, etc.",
+  "required_skills": [
+    "Data Science",
+    "Statistical models",
+    "Machine Learning",
+    "Python",
+    "SQL",
+    "Data analysis",
+    "Data visualization",
+    "Probability",
+    "Statistics"
+  ],
+  "nice_to_have": [
+    "Deep Learning",
+    "Time Series Analysis",
+    "Bayesian Statistics",
+    "Causal Inference",
+    "Geo Data Modeling"
+  ],
+  "visa": null,
+  "languages": [
+    "English"
+  ],
+  "contract": "Full-time",
+  "geo": "Europe",
+  "salary_text": "38K - 53K\u20ac",
+  "deadline_at": null,
+  "posted_at": null,
+  "responsibilities": [
+    "Develop high-impact data science projects",
+    "Design, train, and validate statistical and machine learning models",
+    "Analyze results of real-life experiments",
+    "Convert technical knowledge into business insights",
+    "Join product development conversations"
+  ],
+  "summary": "Join Cabify's Applied Science team to improve urban mobility through data-driven insights and innovative data science solutions.",
+  "extraction_confidence": 95
+}

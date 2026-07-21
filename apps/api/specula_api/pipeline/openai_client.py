@@ -114,7 +114,11 @@ class OpenAIResponsesClient:
         return sources
 
     async def _search(self, query: str, allowed_domains: Sequence[str] | None) -> list[Source]:
-        # verified by live smoke
+        # verified against installed SDK (openai 2.45,
+        # openai/types/responses/response_includable.py): `web_search_call` output items only
+        # populate `action.sources` when the response explicitly asks for it via
+        # `include=["web_search_call.action.sources"]` — without this, `action.sources` is
+        # always None and `_sources_from_response` silently returns [].
         tool: WebSearchToolParam = {"type": "web_search"}
         if allowed_domains:
             tool["filters"] = {"allowed_domains": list(allowed_domains)}
@@ -122,6 +126,7 @@ class OpenAIResponsesClient:
             model=self._settings.openai_search_model,
             input=query,
             tools=[tool],
+            include=["web_search_call.action.sources"],
         )
         return _sources_from_response(response)
 
@@ -312,3 +317,66 @@ def _pseudo_vector(text: str) -> list[float]:
     seed = int.from_bytes(hashlib.sha256(text.encode("utf-8")).digest()[:8], "big")
     rng = random.Random(seed)
     return [rng.uniform(-1.0, 1.0) for _ in range(_EMBED_DIM)]
+
+
+# ---------------------------------------------------------------------------
+# Recording implementation — wraps a live client and mirrors each result to fixtures,
+# keyed identically to RecordedOpenAIClient. Used by pipeline_mode="record" so a live run
+# regenerates the committed fixtures for a later "recorded" run/CI to replay deterministically.
+# ---------------------------------------------------------------------------
+
+
+class RecordingOpenAIClient:
+    """Wraps a live `OpenAIClient` and writes every result to
+    `<fixtures_dir>/openai/<kind>/<key>.json`, using the exact key scheme `RecordedOpenAIClient`
+    reads from (see its docstring). Delegates first, then records — a write failure never masks
+    the underlying result."""
+
+    def __init__(self, live: OpenAIClient, fixtures_dir: str | Path) -> None:
+        self._live = live
+        self._dir = Path(fixtures_dir) / "openai"
+
+    async def discover_sources(
+        self, queries: Sequence[str], *, allowed_domains: Sequence[str] | None = None
+    ) -> list[Source]:
+        sources = await self._live.discover_sources(queries, allowed_domains=allowed_domains)
+        key = _hash_key("\n".join(queries) + "|" + ",".join(sorted(allowed_domains or [])))
+        self._write("discover", key, [source.model_dump() for source in sources])
+        return sources
+
+    async def enrich_company(
+        self, *, name: str, domain: str | None, page_text: str | None
+    ) -> EnrichResult:
+        result = await self._live.enrich_company(name=name, domain=domain, page_text=page_text)
+        self._write("enrich", _slug(domain or name), result.model_dump())
+        return result
+
+    async def extract_posting(
+        self, *, page_text: str, company_name: str | None = None
+    ) -> ExtractionResult:
+        result = await self._live.extract_posting(page_text=page_text, company_name=company_name)
+        # mode="json" so date fields serialize to ISO strings RecordedOpenAIClient can re-parse.
+        self._write("extract", _hash_key(page_text), result.model_dump(mode="json"))
+        return result
+
+    async def embed(self, texts: Sequence[str]) -> list[list[float]]:
+        vectors = await self._live.embed(texts)
+        for text, vector in zip(texts, vectors, strict=True):
+            self._write("embed", _hash_key(text), vector)
+        return vectors
+
+    async def rationale(
+        self, *, factors: dict[str, int], overlap: tuple[int, int], red_flag: str | None
+    ) -> str:
+        result = await self._live.rationale(factors=factors, overlap=overlap, red_flag=red_flag)
+        key = _hash_key(json.dumps(factors, sort_keys=True))
+        self._write("rationale", key, result)
+        return result
+
+    async def aclose(self) -> None:
+        await self._live.aclose()
+
+    def _write(self, kind: str, key: str, data: object) -> None:
+        path = self._dir / kind / f"{key}.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(data, indent=2) + "\n")

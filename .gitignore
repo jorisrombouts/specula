@@ -25,6 +25,13 @@ apps/web/e2e/visual/.auth/
 *-darwin.png
 *-win32.png
 
+# Live-run page captures (PIPELINE_MODE=record -> RecordingFetcher): hundreds of MB of raw
+# ATS/company HTML, keyed by sha256 of the REAL url. The suite replays its own small
+# hand-authored "acme" fixtures instead — those are already tracked, and gitignore does not
+# untrack, so they keep working. Add a new hand-authored one with `git add -f`.
+# The openai/* recordings stay tracked: they're small and document real response shapes.
+apps/api/tests/fixtures/pipeline/http/*.json
+
 # Env & secrets
 .env
 .env.*

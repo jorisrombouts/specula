@@ -78,6 +78,21 @@ async def test_robots_fetch_failure_fails_open(fetcher: PoliteFetcher) -> None:
     assert doc.status == 200
 
 
+async def test_get_returns_zero_status_doc_on_transport_error(fetcher: PoliteFetcher) -> None:
+    """A dead host/DNS failure/connection reset must not crash a crawl — `get` returns a
+    synthetic non-200 doc instead of propagating the httpx exception, so downstream stages
+    (which already treat non-200 as "no page") skip the URL and move on."""
+    with respx.mock(assert_all_called=False) as router:
+        router.get("https://acme.example/robots.txt").respond(404)
+        router.get("https://acme.example/jobs").mock(side_effect=httpx.ConnectError("boom"))
+
+        doc = await fetcher.get("https://acme.example/jobs")
+
+    assert doc.status == 0
+    assert doc.text == ""
+    assert doc.url == "https://acme.example/jobs"
+
+
 async def test_429_then_200_is_retried(fetcher: PoliteFetcher, no_real_sleep: list[float]) -> None:
     with respx.mock(assert_all_called=False) as router:
         router.get("https://acme.example/robots.txt").respond(404)

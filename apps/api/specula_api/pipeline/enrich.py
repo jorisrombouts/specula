@@ -4,6 +4,7 @@ from specula_api.db.models import Company
 from specula_api.pipeline.deps import PipelineDeps
 from specula_api.pipeline.openai_client import EnrichResult
 from specula_api.pipeline.source import detect_ats
+from specula_api.pipeline.util import html_to_text
 
 
 async def enrich_company(company: Company, deps: PipelineDeps) -> EnrichResult:
@@ -12,7 +13,7 @@ async def enrich_company(company: Company, deps: PipelineDeps) -> EnrichResult:
     them). Logo stays a favicon URL (never object storage)."""
     url = company.careers_url or f"https://{company.domain}"
     doc = await deps.fetcher.get(url)
-    page_text = doc.text if doc.status == 200 else None
+    page_text = html_to_text(doc.text) if doc.status == 200 else None
 
     llm = await deps.openai.enrich_company(
         name=company.name, domain=company.domain, page_text=page_text

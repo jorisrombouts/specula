@@ -134,7 +134,9 @@ async def _seed_targeting_and_pool(session: AsyncSession, user_id: UUID) -> tupl
     session.add(
         Targeting(
             user_id=user_id,
-            role_titles=["ML Engineer"],
+            # Must match the ATS fixture's posting title — fetch.py's title_matches_roles()
+            # relevance gate drops feed entries that don't contain a target role title.
+            role_titles=["Backend Engineer"],
             seniority=["Senior"],
             must_haves=["Python"],
         )
@@ -150,7 +152,7 @@ async def _seed_targeting_and_pool(session: AsyncSession, user_id: UUID) -> tupl
     )
     session.add(lens)
     await session.flush()
-    [query] = build_seed_queries(["ML Engineer"], [lens], cap=5)
+    [query] = build_seed_queries(["Backend Engineer"], [lens], cap=5)
     return lens, query
 
 
