@@ -30,6 +30,13 @@ class _Candidate:
     found_query: str
 
 
+# ATSes that host each company at its own subdomain (bunq.recruitee.com,
+# smava.jobs.personio.de) — the host is already company-distinguishing, unlike the shared
+# boards.greenhouse.io-style hosts, so folding the job-page path segment ("o", "job") into
+# the domain below would be wrong rather than merely redundant.
+_SUBDOMAIN_TOKEN_ATS = frozenset({"recruitee", "personio"})
+
+
 def _region_hint(lens: Lens) -> str:
     """A short location hint for a job-search query, from the lens scope (a country code
     or 'City, CC') or, failing that, a remote/EU cue in the lens name. Generic lenses
@@ -143,7 +150,7 @@ def _resolve_candidate(source: Source, query: str) -> _Candidate:
     ats = detect_ats(domain=None, careers_url=source.url, ats_hint=None)
     token = _path_token(parts.path)
 
-    if ats is not None and token:
+    if ats is not None and token and ats not in _SUBDOMAIN_TOKEN_ATS:
         domain = f"{token}.{host}"
         label = token
     else:

@@ -14,6 +14,7 @@ from specula_api.pipeline.deps import PipelineDeps
 from specula_api.pipeline.discovery import (
     DiscoverResult,
     _region_hint,
+    _resolve_candidate,
     build_seed_queries,
     discover,
 )
@@ -290,3 +291,43 @@ def test_region_hint_scope_takes_precedence_over_name_cue() -> None:
     """A real scope wins even when the lens name happens to mention 'remote'/'eu'."""
     lens = Lens(user_id=uuid4(), name="Remote EU", scope="ES", active=True)
     assert _region_hint(lens) == "Spain"
+
+
+# --- _resolve_candidate ----------------------------------------------------------
+
+
+def test_resolve_candidate_folds_path_token_for_smartrecruiters() -> None:
+    """SmartRecruiters (like Greenhouse/Lever/Ashby) hosts every company's board at a
+    shared host with a path-based token, so the token must fold into the domain to keep
+    different companies from colliding."""
+    source = Source(url="https://jobs.smartrecruiters.com/DeliveryHero/744-title", title="x")
+    candidate = _resolve_candidate(source, "query")
+    assert candidate.domain == "deliveryhero.jobs.smartrecruiters.com"
+    assert candidate.ats == "smartrecruiters"
+    assert candidate.name == "Deliveryhero"
+
+
+def test_resolve_candidate_folds_path_token_for_workable() -> None:
+    source = Source(url="https://apply.workable.com/mondu/j/CAAC2E000A", title="x")
+    candidate = _resolve_candidate(source, "query")
+    assert candidate.domain == "mondu.apply.workable.com"
+    assert candidate.ats == "workable"
+
+
+def test_resolve_candidate_does_not_fold_subdomain_token_for_recruitee() -> None:
+    """Recruitee hosts each company at its own subdomain (bunq.recruitee.com) — the host is
+    already company-distinguishing, so folding the job page's path segment ("o") into the
+    domain would be wrong, unlike the shared-host ATSes above."""
+    source = Source(url="https://bunq.recruitee.com/o/operational-risk-intern-1", title="x")
+    candidate = _resolve_candidate(source, "query")
+    assert candidate.domain == "bunq.recruitee.com"
+    assert candidate.ats == "recruitee"
+    assert candidate.name == "Bunq"
+
+
+def test_resolve_candidate_does_not_fold_subdomain_token_for_personio() -> None:
+    source = Source(url="https://smava.jobs.personio.de/job/275557", title="x")
+    candidate = _resolve_candidate(source, "query")
+    assert candidate.domain == "smava.jobs.personio.de"
+    assert candidate.ats == "personio"
+    assert candidate.name == "Smava"

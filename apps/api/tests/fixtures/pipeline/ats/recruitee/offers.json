@@ -1,0 +1,43 @@
+{
+  "offers": [
+    {
+      "id": 2679762,
+      "title": "Operational Risk Intern",
+      "slug": "operational-risk-intern-1",
+      "careers_url": "https://careers.bunq.com/o/operational-risk-intern-1",
+      "careers_apply_url": "https://careers.bunq.com/o/operational-risk-intern-1/c/new",
+      "company_name": "bunq",
+      "status": "published",
+      "department": "Risk, Legal & Compliance",
+      "location": "Amsterdam, Noord-Holland, Netherlands",
+      "remote": false,
+      "published_at": "2026-07-16 11:24:50 UTC"
+    },
+    {
+      "id": 2676781,
+      "title": "Payment Investigations Expert",
+      "slug": "payment-investigations-expert",
+      "careers_url": "https://careers.bunq.com/o/payment-investigations-expert",
+      "careers_apply_url": "https://careers.bunq.com/o/payment-investigations-expert/c/new",
+      "company_name": "bunq",
+      "status": "published",
+      "department": "Support & Operations",
+      "location": "Sofia, Sofia (stolitsa), Bulgaria",
+      "remote": false,
+      "published_at": "2026-07-14 10:49:12 UTC"
+    },
+    {
+      "id": 2675345,
+      "title": "Fraud Ops Expert",
+      "slug": "fraud-ops-expert",
+      "careers_url": "https://careers.bunq.com/o/fraud-ops-expert",
+      "careers_apply_url": "https://careers.bunq.com/o/fraud-ops-expert/c/new",
+      "company_name": "bunq",
+      "status": "published",
+      "department": "Support & Operations",
+      "location": "Sofia, Sofia (stolitsa), Bulgaria",
+      "remote": false,
+      "published_at": "2026-07-13 13:42:26 UTC"
+    }
+  ]
+}
