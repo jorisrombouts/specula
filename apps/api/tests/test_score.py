@@ -98,11 +98,22 @@ class _EchoingOpenAI:
 
 
 def _deps(openai: _EchoingOpenAI) -> PipelineDeps:
+    # pipeline_mode="recorded" pins the skill-vector cache to the "recorded" provenance.
+    # Settings() otherwise reads .env, and a dev database shared with live runs holds REAL
+    # cached vectors — skill_vectors would serve those while the stub returns pseudo-vectors
+    # for everything else, so identical text would compare at ~0 instead of 1.0.
     return PipelineDeps(
         openai=openai,
         fetcher=_UnusedFetcher(),
-        settings=Settings(),
+        settings=Settings(pipeline_mode="recorded"),
         now=lambda: datetime(2026, 7, 5, tzinfo=UTC),
+    )
+
+
+async def _must_have_vecs(deps: PipelineDeps, targeting: Targeting) -> list[list[float]]:
+    """Mirrors what `ingest_company` computes once per run."""
+    return await deps.openai.embed(
+        [must_have.strip().casefold() for must_have in targeting.must_haves]
     )
 
 
@@ -188,8 +199,9 @@ async def _score(
     await embed_posting(posting, deps)
     await ensure_candidate_vectors(session, candidate, deps)
     role_titles_vec = await _role_titles_vec(deps, targeting)
+    must_have_vecs = await _must_have_vecs(deps, targeting)
     return await score_posting(
-        session, user_id, posting, candidate, targeting, role_titles_vec, deps
+        session, user_id, posting, candidate, targeting, role_titles_vec, must_have_vecs, deps
     )
 
 
@@ -472,14 +484,15 @@ async def test_score_posting_is_deterministic_across_runs(db_session: AsyncSessi
     await embed_posting(posting, deps)
     await ensure_candidate_vectors(db_session, candidate, deps)
     role_titles_vec = await _role_titles_vec(deps, targeting)
+    mh_vecs = await _must_have_vecs(deps, targeting)
 
     first = await score_posting(
-        db_session, user.id, posting, candidate, targeting, role_titles_vec, deps
+        db_session, user.id, posting, candidate, targeting, role_titles_vec, mh_vecs, deps
     )
     first_role, first_skill = first.factor_role, first.factor_skill
 
     second = await score_posting(
-        db_session, user.id, posting, candidate, targeting, role_titles_vec, deps
+        db_session, user.id, posting, candidate, targeting, role_titles_vec, mh_vecs, deps
     )
 
     assert second.factor_role == first_role
@@ -648,15 +661,16 @@ async def test_score_posting_is_salary_blind(db_session: AsyncSession) -> None:
     await embed_posting(posting, deps)
     await ensure_candidate_vectors(db_session, candidate, deps)
     role_titles_vec = await _role_titles_vec(deps, targeting)
+    mh_vecs = await _must_have_vecs(deps, targeting)
 
     low = await score_posting(
-        db_session, user.id, posting, candidate, targeting, role_titles_vec, deps
+        db_session, user.id, posting, candidate, targeting, role_titles_vec, mh_vecs, deps
     )
     low_factors = (low.factor_role, low.factor_skill, low.overlap_matched, low.overlap_total)
 
     posting.salary_text = "$500k"  # wildly different — must not move any factor
     high = await score_posting(
-        db_session, user.id, posting, candidate, targeting, role_titles_vec, deps
+        db_session, user.id, posting, candidate, targeting, role_titles_vec, mh_vecs, deps
     )
     high_factors = (high.factor_role, high.factor_skill, high.overlap_matched, high.overlap_total)
 
@@ -705,9 +719,10 @@ async def test_score_posting_upsert_is_idempotent(db_session: AsyncSession) -> N
     await embed_posting(posting, deps)
     await ensure_candidate_vectors(db_session, candidate, deps)
     role_titles_vec = await _role_titles_vec(deps, targeting)
+    mh_vecs = await _must_have_vecs(deps, targeting)
 
     first = await score_posting(
-        db_session, user.id, posting, candidate, targeting, role_titles_vec, deps
+        db_session, user.id, posting, candidate, targeting, role_titles_vec, mh_vecs, deps
     )
     assert first.overlap_matched == 1
 
@@ -716,7 +731,7 @@ async def test_score_posting_upsert_is_idempotent(db_session: AsyncSession) -> N
     candidate.skills_vec = None
     await ensure_candidate_vectors(db_session, candidate, deps)
     updated = await score_posting(
-        db_session, user.id, posting, candidate, targeting, role_titles_vec, deps
+        db_session, user.id, posting, candidate, targeting, role_titles_vec, mh_vecs, deps
     )
 
     rows = (await db_session.scalars(select(Score).where(Score.posting_id == posting.id))).all()
@@ -844,3 +859,106 @@ async def test_ingest_company_scores_extracted_postings_for_read_model(
     assert job is not None
     assert 0 <= job.match <= 100
     assert job.rationale != ""
+
+
+# --- must-have coverage ---------------------------------------------------------------
+#
+# A must-have is a SKILL, matched against the posting's required skills — one register, one
+# comparison. Measured on the live corpus that comparison is bimodal (70% at exactly 1.00,
+# then a cliff to 0.48/0.33/0.23), which is what makes a threshold meaningful here.
+#
+# Criteria about the role as a whole ("Production ML or applied LLM work") are deliberately
+# out of scope: that is an entailment question, and cosine measures topical similarity. It
+# was tried against skill tokens, the aggregate skills vector, and the full
+# title/summary/responsibilities text — every one produced a smooth ramp with no separating
+# boundary. Those belong in `targeting.preferences`, which does not drive scoring.
+
+
+@requires_db
+async def test_score_posting_covers_a_must_have_named_differently(
+    db_session: AsyncSession,
+) -> None:
+    """The must-have is compared as an embedding, so it need not be worded identically to
+    the posting's skill — exact string matching flagged 53 of 53 postings in the corpus."""
+    user = await make_user(db_session)
+    await set_tenant(db_session, user.id)
+    must_have, near_skill = _unique_skill("python"), _unique_skill("python3")
+    openai = _PlantedVectorOpenAI(
+        {
+            must_have: _vec(1.0, 0.0),
+            near_skill: _vec(1.0, 0.2),  # cos 0.98 -> covered
+        }
+    )
+    candidate = await _make_candidate(db_session, user.id, skills=[near_skill])
+    targeting = await _make_targeting(
+        db_session, user.id, role_titles=["ML Engineer"], must_haves=[must_have]
+    )
+    posting = await _make_posting(
+        db_session, user.id, title="ML Engineer", required_skills=[near_skill]
+    )
+
+    score = await _score(db_session, user.id, posting, candidate, targeting, _deps(openai))
+
+    assert score.red_flag is None
+
+
+@requires_db
+async def test_score_posting_flags_a_must_have_no_skill_covers(db_session: AsyncSession) -> None:
+    user = await make_user(db_session)
+    await set_tenant(db_session, user.id)
+    must_have, unrelated = _unique_skill("python"), _unique_skill("welding")
+    openai = _PlantedVectorOpenAI(
+        {
+            must_have: _vec(1.0, 0.0),
+            unrelated: _vec(0.0, 1.0),  # orthogonal -> genuinely absent
+        }
+    )
+    candidate = await _make_candidate(db_session, user.id, skills=[unrelated])
+    targeting = await _make_targeting(
+        db_session, user.id, role_titles=["ML Engineer"], must_haves=[must_have]
+    )
+    posting = await _make_posting(
+        db_session, user.id, title="ML Engineer", required_skills=[unrelated]
+    )
+
+    score = await _score(db_session, user.id, posting, candidate, targeting, _deps(openai))
+
+    assert score.red_flag == f"Missing must-have: {must_have}"
+
+
+@requires_db
+async def test_score_posting_no_must_haves_means_no_red_flag(db_session: AsyncSession) -> None:
+    user = await make_user(db_session)
+    await set_tenant(db_session, user.id)
+    candidate = await _make_candidate(db_session, user.id, skills=["Python"])
+    targeting = await _make_targeting(db_session, user.id, role_titles=["ML Engineer"])
+    posting = await _make_posting(
+        db_session, user.id, title="ML Engineer", required_skills=["Python"]
+    )
+
+    score = await _score(
+        db_session, user.id, posting, candidate, targeting, _deps(_EchoingOpenAI())
+    )
+
+    assert score.red_flag is None
+
+
+@requires_db
+async def test_score_posting_flags_a_must_have_when_posting_lists_no_skills(
+    db_session: AsyncSession,
+) -> None:
+    """Nothing to compare against is not coverage — an unextractable posting must not
+    silently satisfy every must-have."""
+    user = await make_user(db_session)
+    await set_tenant(db_session, user.id)
+    candidate = await _make_candidate(db_session, user.id, skills=["Python"])
+    targeting = await _make_targeting(
+        db_session, user.id, role_titles=["ML Engineer"], must_haves=["Python"]
+    )
+    posting = await _make_posting(db_session, user.id, title="ML Engineer", required_skills=[])
+
+    score = await _score(
+        db_session, user.id, posting, candidate, targeting, _deps(_EchoingOpenAI())
+    )
+
+    assert score.red_flag == "Missing must-have: Python"

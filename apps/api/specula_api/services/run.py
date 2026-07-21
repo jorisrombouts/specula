@@ -147,6 +147,13 @@ async def ingest_company(
 
     await ensure_candidate_vectors(session, candidate, deps)
     [role_titles_vec] = await deps.openai.embed([" ".join(targeting.role_titles)])
+    # Per-run constants derived from Targeting, embedded once here rather than per posting
+    # (same reason as role_titles_vec above). Casefolded so a must-have compares against the
+    # CANONICAL form skill_vectors caches — "Python" and the skill "python" then resolve to
+    # one vector and match at exactly 1.0 instead of merely being near neighbours.
+    must_have_vecs = await deps.openai.embed(
+        [must_have.strip().casefold() for must_have in targeting.must_haves]
+    )
 
     scorable = await session.scalars(
         select(Posting).where(
@@ -157,7 +164,9 @@ async def ingest_company(
         )
     )
     for posting in scorable:
-        await score_posting(session, user_id, posting, candidate, targeting, role_titles_vec, deps)
+        await score_posting(
+            session, user_id, posting, candidate, targeting, role_titles_vec, must_have_vecs, deps
+        )
 
 
 async def trigger_company_ingest(user_id: UUID, company_id: UUID) -> None:

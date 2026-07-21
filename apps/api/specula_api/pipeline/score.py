@@ -8,6 +8,7 @@ here. `posting.salary_text` is never read by this module.
 """
 
 import math
+from collections.abc import Sequence
 from uuid import UUID
 
 from sqlalchemy import select
@@ -154,13 +155,38 @@ def _seniority_adjustment(posting_seniority: str | None, targeting_seniority: li
 
 
 def _missing_must_have(
-    must_haves: list[str], required_canon: set[str], alias_map: dict[str, str]
+    must_haves: list[str],
+    must_have_vecs: Sequence[list[float]],
+    required_vecs: list[list[float]],
+    *,
+    threshold: float,
 ) -> str | None:
-    """The first `targeting.must_haves` entry absent from the posting's required skills,
-    or None if all are present. This is the ONLY red_flag this stage sets — the
-    low-skill-overlap flag belongs to the read model (`services/jobs.py::score_match`)."""
-    for must_have in must_haves:
-        if _canonicalize(must_have, alias_map) not in required_canon:
+    """The first `targeting.must_haves` entry no required skill covers, or None.
+
+    A must-have is a SKILL, compared against the posting's skills exactly like overlap —
+    one register, one comparison. Measured on the live corpus that comparison separates
+    cleanly: most postings that list the skill hit exactly 1.00, and there is an empty gap
+    between the highest false positive ("sql" covers "python" at 0.477) and the lowest true
+    match ("python engineering", 0.617). `must_have_similarity` sits in that gap.
+
+    Deliberately NOT supported: criteria about the role as a whole ("Production ML or
+    applied LLM work"). Whether a posting satisfies one is an ENTAILMENT question, and
+    cosine measures topical similarity. Tried against skill tokens, against the aggregate
+    skills vector, and against the full title/summary/responsibilities text — every one
+    produced a smooth ramp with no separating boundary. Against profile text, postings that
+    require Python scored 0.106-0.207 while those that don't scored 0.090-0.182: fully
+    overlapping. Any threshold there would be fitted to noise. Free-text criteria belong in
+    `targeting.preferences`, which does not drive scoring.
+
+    Exact string matching previously flagged 53 of 53 postings, because prose can never
+    appear verbatim in a skills list. The flag renders in the UI and is fed to the rationale
+    writer, so a permanently-on false warning was shaping every rationale in the product.
+
+    This is the ONLY red_flag this stage sets — the low-skill-overlap flag belongs to the
+    read model (`services/jobs.py::score_match`).
+    """
+    for must_have, must_have_vec in zip(must_haves, must_have_vecs, strict=True):
+        if not any(cosine(must_have_vec, vec) >= threshold for vec in required_vecs):
             return f"Missing must-have: {must_have}"
     return None
 
@@ -184,6 +210,7 @@ async def score_posting(
     candidate: CandidateProfile,
     targeting: Targeting,
     role_titles_vec: list[float] | None,
+    must_have_vecs: Sequence[list[float]],
     deps: PipelineDeps,
 ) -> Score:
     """Compute the salary-blind hybrid score for one posting and upsert its `Score` row
@@ -203,8 +230,9 @@ async def score_posting(
     # low-overlap red flag. Identical/aliased skills share one canonical cache entry and so
     # still compare at exactly 1.0; the threshold only governs the semantic tail.
     vectors = await skill_vectors(session, required_canon | candidate_canon, deps)
+    required_vecs = [vectors[skill] for skill in required_canon if skill in vectors]
     overlap_matched = semantic_overlap(
-        [vectors[skill] for skill in required_canon if skill in vectors],
+        required_vecs,
         [vectors[skill] for skill in candidate_canon if skill in vectors],
         threshold=deps.settings.skill_match_similarity,
     )
@@ -221,7 +249,12 @@ async def score_posting(
         role_cosine_pct + _seniority_adjustment(posting.seniority, targeting.seniority)
     )
 
-    red_flag = _missing_must_have(targeting.must_haves, required_canon, alias_map)
+    red_flag = _missing_must_have(
+        targeting.must_haves,
+        must_have_vecs,
+        required_vecs,
+        threshold=deps.settings.must_have_similarity,
+    )
 
     rationale = await deps.openai.rationale(
         factors={"role": factor_role, "skill": factor_skill},
