@@ -100,7 +100,10 @@ def _apply_enrichment(company: Company, enriched: EnrichResult) -> None:
         company.hq_confidence = enriched.hq_confidence
     if enriched.comp_estimate is not None:
         company.comp_estimate = enriched.comp_estimate
-    if enriched.careers_url is not None:
+    # Only FILL a missing careers_url, never overwrite. Discovery's URL is observed fact;
+    # the model's is a guess, and letting it win would discard the real one permanently —
+    # every later run would then enrich from the guess.
+    if company.careers_url is None and enriched.careers_url is not None:
         company.careers_url = enriched.careers_url
     if enriched.ats is not None:
         company.ats = enriched.ats

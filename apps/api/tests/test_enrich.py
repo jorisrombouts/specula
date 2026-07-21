@@ -224,6 +224,43 @@ async def test_ingest_company_applies_enrichment_and_defaults_logo_to_favicon(
 
 
 @requires_db
+async def test_ingest_company_keeps_the_discovered_careers_url_over_the_models_guess(
+    db_session: AsyncSession,
+) -> None:
+    """Discovery's careers_url is observed fact; the model's is a guess.
+
+    Letting the guess win would discard the real URL permanently — every later run would then
+    enrich from the guess, and for a path-token ATS the `https://{domain}` fallback is a
+    fabricated host that does not resolve at all.
+    """
+    user = await make_user(db_session)
+    await set_tenant(db_session, user.id)
+    discovered = "https://job-boards.greenhouse.io/acme/jobs/123"
+    company = Company(
+        user_id=user.id,
+        name="Acme",
+        domain="acme.job-boards.greenhouse.io",
+        careers_url=discovered,
+    )
+    db_session.add(company)
+    await db_session.flush()
+    company_id = company.id
+
+    openai = _StubOpenAI(
+        EnrichResult(hq_country="US", careers_url="https://acme.example/careers-guess")
+    )
+    fetcher = _StubFetcher(FetchedDoc(url=discovered, status=200, text="<html>Acme</html>"))
+
+    await ingest_company(db_session, user.id, company_id, _deps(openai, fetcher))
+
+    refreshed = await db_session.get(Company, company_id)
+    assert refreshed is not None
+    assert refreshed.careers_url == discovered  # not the guess
+    assert refreshed.hq_country == "US"  # other enriched fields still apply
+    assert fetcher.calls[0] == discovered  # and the real page is what got fetched
+
+
+@requires_db
 async def test_ingest_company_does_not_overwrite_existing_logo(
     db_session: AsyncSession,
 ) -> None:
