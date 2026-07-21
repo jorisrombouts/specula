@@ -53,6 +53,12 @@ class Settings(BaseSettings):
     # unrelated roles that share wording ("Engineering Manager" vs "Engineer").
     dedup_title_similarity: float = 0.45
     dedup_vector_similarity: float = 0.92
+    # Skill overlap (spec §6.2): a required skill counts as covered when its embedding's
+    # cosine to ANY candidate skill clears this. Exact/aliased skills share one canonical
+    # cache entry, so they compare at 1.0 and always clear it; this threshold only decides
+    # the semantic tail ("Machine Learning" covered by "PyTorch"). Tuned against the live
+    # pool — see docs/SKILL-MATCHING.md.
+    skill_match_similarity: float = 0.55
     pipeline_mode: Literal["live", "recorded", "record"] = "live"
     pipeline_execution: Literal["enqueue", "inline"] = "inline"  # no Redis/worker this milestone
     pipeline_fixtures_dir: str | None = None
