@@ -171,9 +171,9 @@ async def test_greenhouse_adapter_content_hash_is_stable_across_runs() -> None:
     assert [p.content_hash for p in first_run] == [p.content_hash for p in second_run]
 
 
-async def test_greenhouse_adapter_derives_token_from_domain_fallback() -> None:
+async def test_greenhouse_adapter_derives_token_from_an_ats_host_domain() -> None:
     body = (ATS_FIXTURES_DIR / "greenhouse" / "jobs.json").read_text()
-    company = _CompanyStub(domain="acme.com")
+    company = _CompanyStub(domain="acme.job-boards.greenhouse.io")
     fetcher = _StubFetcher(body)
 
     postings = await GreenhouseAdapter().list_postings(company, fetcher)
@@ -216,13 +216,13 @@ async def test_greenhouse_adapter_returns_empty_for_a_genuinely_empty_board() ->
     assert await GreenhouseAdapter().list_postings(company, _StubFetcher('{"jobs": []}')) == []
 
 
-async def test_greenhouse_adapter_returns_empty_without_a_derivable_token() -> None:
+async def test_greenhouse_adapter_raises_without_a_derivable_token() -> None:
     company = _CompanyStub()
     fetcher = _StubFetcher((ATS_FIXTURES_DIR / "greenhouse" / "jobs.json").read_text())
 
-    postings = await GreenhouseAdapter().list_postings(company, fetcher)
+    with pytest.raises(BoardUnavailable):
+        await GreenhouseAdapter().list_postings(company, fetcher)
 
-    assert postings == []
     assert fetcher.calls == []
 
 
@@ -329,9 +329,9 @@ async def test_smartrecruiters_adapter_content_hash_is_stable_across_runs() -> N
     assert [p.content_hash for p in first_run] == [p.content_hash for p in second_run]
 
 
-async def test_smartrecruiters_adapter_derives_token_from_domain_fallback() -> None:
+async def test_smartrecruiters_adapter_derives_token_from_an_ats_host_domain() -> None:
     body = (ATS_FIXTURES_DIR / "smartrecruiters" / "postings.json").read_text()
-    company = _CompanyStub(domain="deliveryhero.com")
+    company = _CompanyStub(domain="deliveryhero.jobs.smartrecruiters.com")
     fetcher = _StubFetcher(body)
 
     postings = await SmartRecruitersAdapter().list_postings(company, fetcher)
@@ -352,13 +352,13 @@ async def test_smartrecruiters_adapter_raises_on_garbage_feed() -> None:
         await SmartRecruitersAdapter().list_postings(company, _StubFetcher("not json"))
 
 
-async def test_smartrecruiters_adapter_returns_empty_without_a_derivable_token() -> None:
+async def test_smartrecruiters_adapter_raises_without_a_derivable_token() -> None:
     company = _CompanyStub()
     fetcher = _StubFetcher((ATS_FIXTURES_DIR / "smartrecruiters" / "postings.json").read_text())
 
-    postings = await SmartRecruitersAdapter().list_postings(company, fetcher)
+    with pytest.raises(BoardUnavailable):
+        await SmartRecruitersAdapter().list_postings(company, fetcher)
 
-    assert postings == []
     assert fetcher.calls == []
 
 
@@ -415,13 +415,13 @@ async def test_recruitee_adapter_raises_on_garbage_feed() -> None:
         await RecruiteeAdapter().list_postings(company, _StubFetcher("not json"))
 
 
-async def test_recruitee_adapter_returns_empty_without_a_derivable_token() -> None:
+async def test_recruitee_adapter_raises_without_a_derivable_token() -> None:
     company = _CompanyStub()
     fetcher = _StubFetcher((ATS_FIXTURES_DIR / "recruitee" / "offers.json").read_text())
 
-    postings = await RecruiteeAdapter().list_postings(company, fetcher)
+    with pytest.raises(BoardUnavailable):
+        await RecruiteeAdapter().list_postings(company, fetcher)
 
-    assert postings == []
     assert fetcher.calls == []
 
 
@@ -452,9 +452,9 @@ async def test_workable_adapter_content_hash_is_stable_across_runs() -> None:
     assert [p.content_hash for p in first_run] == [p.content_hash for p in second_run]
 
 
-async def test_workable_adapter_derives_token_from_domain_fallback() -> None:
+async def test_workable_adapter_derives_token_from_an_ats_host_domain() -> None:
     body = (ATS_FIXTURES_DIR / "workable" / "widget.json").read_text()
-    company = _CompanyStub(domain="mondu.com")
+    company = _CompanyStub(domain="mondu.apply.workable.com")
     fetcher = _StubFetcher(body)
 
     postings = await WorkableAdapter().list_postings(company, fetcher)
@@ -475,13 +475,13 @@ async def test_workable_adapter_raises_on_garbage_feed() -> None:
         await WorkableAdapter().list_postings(company, _StubFetcher("not json"))
 
 
-async def test_workable_adapter_returns_empty_without_a_derivable_token() -> None:
+async def test_workable_adapter_raises_without_a_derivable_token() -> None:
     company = _CompanyStub()
     fetcher = _StubFetcher((ATS_FIXTURES_DIR / "workable" / "widget.json").read_text())
 
-    postings = await WorkableAdapter().list_postings(company, fetcher)
+    with pytest.raises(BoardUnavailable):
+        await WorkableAdapter().list_postings(company, fetcher)
 
-    assert postings == []
     assert fetcher.calls == []
 
 
@@ -518,11 +518,11 @@ async def test_personio_adapter_content_hash_is_stable_across_runs() -> None:
     assert [p.content_hash for p in first_run] == [p.content_hash for p in second_run]
 
 
-async def test_personio_adapter_derives_token_from_domain_fallback() -> None:
+async def test_personio_adapter_derives_token_from_an_ats_host_domain() -> None:
     """The token lives in the subdomain (smava.jobs.personio.de), same family as Recruitee —
     falling back to the company's plain domain must still resolve the right feed URL."""
     body = (ATS_FIXTURES_DIR / "personio" / "jobs.xml").read_text()
-    company = _CompanyStub(domain="smava.de")
+    company = _CompanyStub(domain="smava.jobs.personio.de")
     fetcher = _StubFetcher(body, content_type="text/xml")
 
     postings = await PersonioAdapter().list_postings(company, fetcher)
@@ -545,13 +545,13 @@ async def test_personio_adapter_raises_on_garbage_feed() -> None:
         )
 
 
-async def test_personio_adapter_returns_empty_without_a_derivable_token() -> None:
+async def test_personio_adapter_raises_without_a_derivable_token() -> None:
     company = _CompanyStub()
     fetcher = _StubFetcher((ATS_FIXTURES_DIR / "personio" / "jobs.xml").read_text())
 
-    postings = await PersonioAdapter().list_postings(company, fetcher)
+    with pytest.raises(BoardUnavailable):
+        await PersonioAdapter().list_postings(company, fetcher)
 
-    assert postings == []
     assert fetcher.calls == []
 
 
@@ -595,3 +595,101 @@ async def test_generic_html_adapter_returns_empty_without_careers_url() -> None:
     company = _CompanyStub()
     postings = await GenericHtmlAdapter().list_postings(company, RecordedFetcher(FIXTURES_DIR))
     assert postings == []
+
+
+# --- board-token derivation must be host-verified -------------------------------
+
+
+async def test_token_is_not_invented_from_an_unrelated_company_domain() -> None:
+    """enrich feeds an LLM-guessed `ats` into detect_ats, which trusts it. Deriving the board
+    token from a bare domain label would then query a stranger's board: monday.com + a guessed
+    "workable" hits apply.workable.com/.../monday, and whoever owns that slug gets ingested as
+    this company. The domain may only supply a token when it IS on the ATS host."""
+    company = _CompanyStub(domain="monday.com", careers_url="https://monday.com/careers")
+    fetcher = _StubFetcher('{"jobs": []}')
+
+    with pytest.raises(BoardUnavailable):
+        await WorkableAdapter().list_postings(company, fetcher)
+
+    assert fetcher.calls == []  # never went looking
+
+
+async def test_no_derivable_token_raises_rather_than_looking_empty() -> None:
+    """Same reasoning as BoardUnavailable elsewhere: we never addressed a board, so we know
+    nothing about it — returning [] would retire every posting the company has."""
+    company = _CompanyStub(domain="acme.com")
+    fetcher = _StubFetcher('{"jobs": []}')
+
+    with pytest.raises(BoardUnavailable):
+        await GreenhouseAdapter().list_postings(company, fetcher)
+
+    assert fetcher.calls == []
+
+
+# --- generic scrape must not turn page furniture into postings -------------------
+
+
+_CAREERS_HTML = """
+<html><body>
+  <a href="#jobs">Jobs</a>
+  <a href="#open-positions">Open positions</a>
+  <a href="mailto:careers@acme.example">Email us</a>
+  <a href="javascript:openJob()">Apply</a>
+  <a href="/careers">Careers</a>
+  <a href="/careers/staff-engineer">Staff Engineer</a>
+  <a href="/careers/staff-engineer?utm_source=x">Staff Engineer (tracked)</a>
+  <a href="https://www.linkedin.com/company/acme/jobs">Our LinkedIn jobs</a>
+  <a href="https://boards.greenhouse.io/acme/jobs/42">Data Scientist</a>
+</body></html>
+"""
+
+
+async def test_generic_adapter_keeps_only_real_job_links() -> None:
+    company = _CompanyStub(careers_url="https://acme.example/careers")
+
+    postings = await GenericHtmlAdapter().list_postings(
+        company, _StubFetcher(_CAREERS_HTML, content_type="text/html")
+    )
+
+    urls = {p.source_url for p in postings}
+    assert urls == {
+        "https://acme.example/careers/staff-engineer",  # same host, real job path
+        "https://boards.greenhouse.io/acme/jobs/42",  # known ATS host
+    }
+
+
+@pytest.mark.parametrize(
+    ("href", "why"),
+    [
+        ("#jobs", "fragment-only anchor is the same page"),
+        ("mailto:careers@acme.example", "not an http(s) target"),
+        ("javascript:openJob()", "not an http(s) target"),
+        ("/careers", "the careers page itself is not a posting"),
+        ("https://www.linkedin.com/company/acme/jobs", "third-party host"),
+    ],
+)
+async def test_generic_adapter_excludes_page_furniture(href: str, why: str) -> None:
+    company = _CompanyStub(careers_url="https://acme.example/careers")
+    html = f'<html><body><a href="{href}">x</a></body></html>'
+
+    postings = await GenericHtmlAdapter().list_postings(
+        company, _StubFetcher(html, content_type="text/html")
+    )
+
+    assert postings == [], why
+
+
+async def test_generic_adapter_collapses_query_string_duplicates() -> None:
+    """Same job, two hrefs — one tracked. Distinct content_hashes would double-count it and
+    burn the per-company extraction budget twice."""
+    company = _CompanyStub(careers_url="https://acme.example/careers")
+    html = (
+        '<html><body><a href="/careers/eng">Eng</a>'
+        '<a href="/careers/eng?utm_source=x">Eng</a></body></html>'
+    )
+
+    postings = await GenericHtmlAdapter().list_postings(
+        company, _StubFetcher(html, content_type="text/html")
+    )
+
+    assert len(postings) == 1

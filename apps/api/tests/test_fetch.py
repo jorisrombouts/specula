@@ -334,3 +334,37 @@ async def test_fetch_postings_keeps_all_raws_without_targeting(
     result = await fetch_postings(db_session, user.id, company, _deps(now))
 
     assert result == FetchResult(found=2, new=2, closed=0, errors=0)
+
+
+@requires_db
+async def test_fetch_postings_does_not_claim_a_posting_owned_by_another_company(
+    db_session: AsyncSession, stub_resolve_adapter: list[_StubAdapter]
+) -> None:
+    """`unique(user_id, content_hash)` means one row per URL per tenant, so when two companies
+    both link the same job it resolves to a single posting.
+
+    Company B must leave A's row alone — and must not try to insert its own copy either, which
+    would violate that constraint and abort the whole ingest. (Scoping the existing-row lookup
+    by company_id, the obvious-looking fix, causes exactly that.)
+    """
+    user = await make_user(db_session)
+    await set_tenant(db_session, user.id)
+    company_a = await _make_company(db_session, user.id)
+    company_b = Company(user_id=user.id, name="Beta", domain="beta.example", ats="greenhouse")
+    db_session.add(company_b)
+    await db_session.flush()
+
+    first_now = datetime(2026, 7, 5, tzinfo=UTC)
+    stub_resolve_adapter[0] = _StubAdapter([RAW_A])
+    await fetch_postings(db_session, user.id, company_a, _deps(first_now))
+
+    # B's careers page links the very same job URL.
+    second_now = datetime(2026, 7, 6, tzinfo=UTC)
+    result = await fetch_postings(db_session, user.id, company_b, _deps(second_now))
+    await db_session.flush()  # an attempted duplicate insert would surface here
+
+    postings = (await db_session.scalars(select(Posting).where(Posting.user_id == user.id))).all()
+    assert len(postings) == 1
+    assert postings[0].company_id == company_a.id  # ownership unchanged
+    assert postings[0].last_seen_at == first_now  # B did not touch it
+    assert result.new == 0

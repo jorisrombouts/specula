@@ -61,6 +61,11 @@ async def fetch_postings(
     for rp in raws:
         existing = existing_by_hash.get(rp.content_hash)
         if existing is not None:
+            if existing.company_id != company.id:
+                # Another company already owns this URL (both careers pages link the same job).
+                # unique(user_id, content_hash) means we cannot insert our own copy, and
+                # touching theirs would drive one company's freshness from another's crawl.
+                continue
             existing.last_seen_at = now
             existing.still_open = True
         else:
