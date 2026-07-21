@@ -44,6 +44,16 @@ _PERSONIO_HOSTS = ("jobs.personio.de", "jobs.personio.com", "personio.de")
 _JOB_LINK_KEYWORDS = ("job", "career", "position", "opening")
 
 
+class BoardUnavailable(Exception):
+    """The board could not be READ — robots-disallowed, non-200 (including PoliteFetcher's
+    status=0 transport sentinel), or an unparseable body.
+
+    Distinct from a board that was read and lists nothing: `list_postings` returning `[]`
+    tells `fetch_postings` every posting is gone and retires them all, so a failed fetch must
+    never masquerade as an empty one.
+    """
+
+
 class RawPosting(BaseModel):
     source_url: str
     external_id: str | None = None
@@ -167,31 +177,31 @@ def _subdomain_token(company: CompanyLike, hosts: tuple[str, ...]) -> str | None
     return None
 
 
-async def _fetch_json(fetcher: Fetcher, url: str) -> object | None:
+async def _fetch_json(fetcher: Fetcher, url: str) -> object:
     try:
         doc = await fetcher.get(url, accept="application/json")
-    except Disallowed:
-        return None
+    except Disallowed as exc:
+        raise BoardUnavailable(f"robots.txt disallows {url}") from exc
     if doc.status != 200 or not doc.text:
-        return None
+        raise BoardUnavailable(f"{url} returned status {doc.status}")
     try:
         data: object = json.loads(doc.text)
-    except json.JSONDecodeError:
-        return None
+    except json.JSONDecodeError as exc:
+        raise BoardUnavailable(f"{url} returned unparseable JSON") from exc
     return data
 
 
-async def _fetch_xml(fetcher: Fetcher, url: str) -> Element | None:
+async def _fetch_xml(fetcher: Fetcher, url: str) -> Element:
     try:
         doc = await fetcher.get(url, accept="application/xml")
-    except Disallowed:
-        return None
+    except Disallowed as exc:
+        raise BoardUnavailable(f"robots.txt disallows {url}") from exc
     if doc.status != 200 or not doc.text:
-        return None
+        raise BoardUnavailable(f"{url} returned status {doc.status}")
     try:
         return ElementTree.fromstring(doc.text)
-    except ElementTree.ParseError:
-        return None
+    except ElementTree.ParseError as exc:
+        raise BoardUnavailable(f"{url} returned unparseable XML") from exc
 
 
 def _to_raw_posting(url: object, job_id: object, title: object) -> RawPosting | None:
@@ -366,10 +376,10 @@ class GenericHtmlAdapter:
             return []
         try:
             doc = await fetcher.get(careers_url, accept="text/html")
-        except Disallowed:
-            return []
+        except Disallowed as exc:
+            raise BoardUnavailable(f"robots.txt disallows {careers_url}") from exc
         if doc.status != 200 or not doc.text:
-            return []
+            raise BoardUnavailable(f"{careers_url} returned status {doc.status}")
 
         tree = HTMLParser(doc.text)
         postings: list[RawPosting] = []

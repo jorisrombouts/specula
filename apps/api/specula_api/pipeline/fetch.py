@@ -32,10 +32,10 @@ async def fetch_postings(
     """List the company's current postings via its ATS adapter, upsert them as provenance
     shells, and close out postings that dropped off the listing.
 
-    The adapter (`resolve_adapter(...).list_postings`) already returns `[]` rather than
-    raising on 404/garbage/JS-shell responses, but this still wraps the call defensively —
-    an adapter that *does* raise counts as `errors=1` and yields no raws, which matters for
-    the lifecycle guard below.
+    An adapter returns `[]` ONLY for a board it read that lists nothing; anything it could
+    not read (robots-disallowed, non-200, unparseable) raises `BoardUnavailable`. That
+    distinction is load-bearing: `[]` retires every open posting for the company, so a
+    transient 503 or DNS blip must not be able to reach that path.
     """
     try:
         raws = await resolve_adapter(company).list_postings(company, deps.fetcher)
@@ -44,6 +44,10 @@ async def fetch_postings(
         raws = []
         errors = 1
 
+    # Everything the board actually advertises, BEFORE the profile gate — this is what
+    # "still listed" means, so narrowing role_titles must not retire live postings.
+    listed_hashes = {rp.content_hash for rp in raws}
+
     # Narrow a big board to the user's target roles by feed title (cheap) before any
     # per-posting LLM extraction runs downstream.
     targeting = await session.get(Targeting, user_id)
@@ -51,8 +55,7 @@ async def fetch_postings(
     raws = [rp for rp in raws if title_matches_roles(rp.title_hint, role_titles)]
 
     now = deps.now()
-    seen_hashes = {rp.content_hash for rp in raws}
-    existing_by_hash = await _existing_by_hash(session, user_id, seen_hashes)
+    existing_by_hash = await _existing_by_hash(session, user_id, {rp.content_hash for rp in raws})
 
     new = 0
     for rp in raws:
@@ -76,12 +79,14 @@ async def fetch_postings(
             new += 1
 
     # A fetch that raised tells us nothing about which postings are still open, so it must
-    # not mass-close anything. A fetch that *succeeded* and legitimately came back empty
-    # (`raws == []`, `errors == 0`) means the company has no open postings right now — that
-    # correctly closes everything still marked open.
+    # not mass-close anything — adapters raise BoardUnavailable rather than returning [] when
+    # the board can't be read, so this is a live guard, not a theoretical one. A fetch that
+    # *succeeded* and legitimately came back empty (`errors == 0`) means the company has no
+    # open postings right now — that correctly closes everything still marked open. Closing
+    # is decided against the FULL listing, never the profile-filtered subset.
     closed = 0
-    if raws or errors == 0:
-        closed = await _close_stale(session, user_id, company.id, seen_hashes, now)
+    if errors == 0:
+        closed = await _close_stale(session, user_id, company.id, listed_hashes, now)
 
     await session.flush()
     return FetchResult(found=len(raws), new=new, closed=closed, errors=errors)

@@ -265,6 +265,38 @@ async def test_fetch_postings_drops_raws_whose_title_does_not_match_target_role_
 
 
 @requires_db
+async def test_fetch_postings_does_not_close_still_listed_postings_when_targeting_narrows(
+    db_session: AsyncSession, stub_resolve_adapter: list[_StubAdapter]
+) -> None:
+    """The relevance gate decides what gets EXTRACTED, not what counts as still on the board.
+
+    `seen_hashes` must come from the UNFILTERED board listing: narrowing role_titles retires
+    postings the board still advertises otherwise, reporting them as closed openings.
+    """
+    user = await make_user(db_session)
+    await set_tenant(db_session, user.id)
+    company = await _make_company(db_session, user.id)
+    db_session.add(Targeting(user_id=user.id, role_titles=["Engineer", "Designer"]))
+    await db_session.flush()
+    stub_resolve_adapter[0] = _StubAdapter([RAW_A, RAW_B])
+    await fetch_postings(db_session, user.id, company, _deps(datetime(2026, 7, 5, tzinfo=UTC)))
+
+    # The user narrows their targeting. The board still lists BOTH roles.
+    targeting = await db_session.get(Targeting, user.id)
+    assert targeting is not None
+    targeting.role_titles = ["Engineer"]
+    await db_session.flush()
+
+    result = await fetch_postings(
+        db_session, user.id, company, _deps(datetime(2026, 7, 6, tzinfo=UTC))
+    )
+
+    assert result.closed == 0
+    postings = (await db_session.scalars(select(Posting).where(Posting.user_id == user.id))).all()
+    assert [p.still_open for p in postings] == [True, True]
+
+
+@requires_db
 async def test_fetch_postings_keeps_all_raws_without_targeting(
     db_session: AsyncSession, stub_resolve_adapter: list[_StubAdapter]
 ) -> None:
