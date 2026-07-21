@@ -102,6 +102,20 @@ db-bootstrap db:
     DATABASE_URL="postgresql+asyncpg://specula_app:specula@localhost:55432/{{db}}" just migrate
     DATABASE_URL="postgresql+asyncpg://specula_app:specula@localhost:55432/{{db}}" just seed
 
+# Two things to know before resetting the shared `specula`:
+#   - It drops every row, including anything a live `prove-live` run ingested. If another
+#     session is mid-ingest against this DB, you will pull the tenant out from under it.
+#   - The downgrade walks back from whatever revision the DB is currently stamped at, so it
+#     FAILS with "Can't locate revision" if that revision only exists on another branch.
+#     Reset from the worktree whose migrations match the DB, or give that worktree its own
+#     DB with `just db-bootstrap` — one database cannot serve two divergent heads.
+#
+# DESTRUCTIVE: drop to base, re-migrate, re-seed. just db-reset [db]
+db-reset db="specula":
+    DATABASE_URL="postgresql+asyncpg://specula_app:specula@localhost:55432/{{db}}" just migrate-down base
+    DATABASE_URL="postgresql+asyncpg://specula_app:specula@localhost:55432/{{db}}" just migrate
+    DATABASE_URL="postgresql+asyncpg://specula_app:specula@localhost:55432/{{db}}" just seed
+
 # Regenerate the committed Linux pixel baselines in the pinned Playwright image
 # (matches CI's Chromium + font stack). The visual config builds and serves a
 # production `next start` inside the container (no dev overlay, no on-demand
