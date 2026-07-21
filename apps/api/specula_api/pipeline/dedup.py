@@ -80,8 +80,11 @@ async def _similar_pairs(
             a.c.title_vec.cosine_distance(b.c.title_vec)
             <= bindparam("cos", cosine_distance, type_=Float),
             # Different stated seniority means different openings, not one role seen twice.
-            # Measured: "Data Scientist" vs "Senior Data Scientist" trigram-matches at 0.71
-            # and embeds near-identically, so neither spec threshold separates them.
+            # Trigram alone pairs them: "Data Scientist" vs "Senior Data Scientist" matches
+            # at 0.71. The cosine gate usually catches it unaided — the closest seniority
+            # pair in the recorded corpus sits at 0.68, well under 0.92 (test_dedup.py) —
+            # but the gate is only as good as the threshold, and merging two real openings
+            # is the worst failure this stage has. Cheap belt-and-braces.
             (a.c.seniority.is_(None))
             | (b.c.seniority.is_(None))
             | (func.lower(a.c.seniority) == func.lower(b.c.seniority)),
