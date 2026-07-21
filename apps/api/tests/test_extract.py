@@ -327,7 +327,10 @@ async def test_extract_posting_stores_skill_tokens_not_requirement_sentences(
     """Measured on the live corpus: 11% of extracted "skills" came back as requirement
     prose. A sentence embeds nowhere near a skill token, so it can never match a candidate
     skill — it only inflates overlap_total and deflates factor_skill. The prompt asks for
-    atomic skills; this is the guard for when the model ignores it."""
+    atomic skills; this is the guard for when the model ignores it.
+
+    `nice_to_have` is deliberately NOT guarded — see the test below.
+    """
     user = await make_user(db_session)
     await set_tenant(db_session, user.id)
     posting = await _make_posting_shell(db_session, user.id, None, _URL)
@@ -341,7 +344,6 @@ async def test_extract_posting_stores_skill_tokens_not_requirement_sentences(
                 "engineering, or applied AI",
                 "Natural Language Processing",
             ],
-            "nice_to_have": ["Strong experience developing and deploying models in production"],
         }
     )
     openai = _StubOpenAI(result)
@@ -349,7 +351,35 @@ async def test_extract_posting_stores_skill_tokens_not_requirement_sentences(
     await extract_posting(db_session, posting, _deps(openai, fetcher))
 
     assert posting.required_skills == ["Python", "Natural Language Processing"]
-    assert posting.nice_to_have == []
+
+
+@requires_db
+async def test_extract_posting_keeps_nice_to_have_prose_verbatim(
+    db_session: AsyncSession,
+) -> None:
+    """`nice_to_have` is display-only — `services/jobs.py` renders it and nothing else reads
+    it. It is never embedded, scored, aggregated or deduped, so the reason `required_skills`
+    drops prose (a sentence can never match a candidate skill) simply does not apply here.
+
+    Dropping it would only lose information: "Familiarity with ML tooling such as MLflow,
+    ZenML, or Metaflow" names three real tools, and showing the reader nothing is strictly
+    worse than showing them that sentence.
+    """
+    user = await make_user(db_session)
+    await set_tenant(db_session, user.id)
+    posting = await _make_posting_shell(db_session, user.id, None, _URL)
+
+    prose = "Familiarity with ML tooling such as MLflow, ZenML, or Metaflow"
+    fetcher = _StubFetcher({_URL: FetchedDoc(url=_URL, status=200, text=_PAGE_TEXT)})
+    openai = _StubOpenAI(
+        FULL_RESULT.model_copy(update={"nice_to_have": ["Kafka", prose, "  Rust  "]})
+    )
+
+    await extract_posting(db_session, posting, _deps(openai, fetcher))
+
+    assert posting.nice_to_have == ["Kafka", prose, "Rust"], (
+        "prose must survive verbatim; only whitespace is normalised"
+    )
 
 
 @requires_db
