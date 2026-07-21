@@ -1,8 +1,18 @@
+import hashlib
+import itertools
+import json
+import math
+from collections.abc import Sequence
+from pathlib import Path
+from typing import cast
+
+import pytest
 from conftest import make_user, set_tenant
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from test_db import requires_db
 
+from specula_api.config import settings
 from specula_api.db.models import Company, Posting
 from specula_api.pipeline.dedup import dedup_company, normalize_title
 
@@ -227,9 +237,13 @@ async def test_lexically_similar_titles_with_distant_vectors_are_not_grouped(
 
 @requires_db
 async def test_different_seniority_is_never_merged(db_session: AsyncSession) -> None:
-    """ "Data Scientist" vs "Senior Data Scientist" trigram-matches at 0.71 and embeds
-    near-identically, so neither spec threshold separates them — but they are two distinct
-    openings. Merging would hide a real job, the worst failure mode for this stage."""
+    """Two distinct openings that trigram-matching alone would pair at 0.71.
+
+    The vectors here are synthetic and near-identical by construction, which isolates the
+    seniority guard: with the cosine gate deliberately unable to help, only the guard keeps
+    these apart. What real embeddings do with such a pair is measured separately, in
+    `test_seniority_variants_are_not_near_identical_in_practice`.
+    """
     user = await make_user(db_session)
     await set_tenant(db_session, user.id)
     company = await _make_company(db_session, user.id)
@@ -291,3 +305,80 @@ async def test_postings_at_different_companies_are_never_grouped(
 
     assert a.dedup_group is None
     assert b.dedup_group is None
+
+
+# --- the 0.92 threshold, against real embeddings -----------------------------------
+#
+# Every test above builds `title_vec` by hand, so they pin the *mechanism* and say
+# nothing about where real titles land. These two use the vectors OpenAI actually
+# returned, recovered from the recorded corpus.
+
+_EMBED_FIXTURES = Path(__file__).parent / "fixtures" / "pipeline" / "openai" / "embed"
+
+# Every title in the recorded corpus whose source text we can recover. Fixtures are
+# keyed by sha256 of the embedded text and don't store the text itself, so this is
+# the reachable set, not a sample we chose. All three are genuinely distinct roles.
+_RECORDED_TITLES = (
+    "Account Executive AI Natives - DACH",
+    "Data Scientist, Applied Science",
+    "Senior Data Scientist",
+)
+
+
+def _recorded_title_vec(title: str) -> list[float]:
+    """The vector OpenAI actually returned for `title`.
+
+    `RecordedOpenAIClient` keys embed fixtures by sha256 of the embedded text, and
+    `embeddings.py` embeds the bare title — so the title alone recovers the vector.
+
+    Skips rather than erroring when the fixture is gone: record mode writes by key and
+    does not ask, so a re-record can drop these titles. That is a corpus change, and it
+    should not read as a dedup regression.
+    """
+    key = hashlib.sha256(title.encode("utf-8")).hexdigest()
+    path = _EMBED_FIXTURES / f"{key}.json"
+    if not path.exists():
+        pytest.skip(f"no recorded embedding for {title!r} — corpus changed, update the list")
+    return cast(list[float], json.loads(path.read_text()))
+
+
+def _cosine(a: Sequence[float], b: Sequence[float]) -> float:
+    dot = sum(x * y for x, y in zip(a, b, strict=True))
+    return dot / (math.sqrt(sum(x * x for x in a)) * math.sqrt(sum(y * y for y in b)))
+
+
+def test_recorded_distinct_roles_stay_below_the_cosine_threshold() -> None:
+    """No two distinct real roles may reach `dedup_vector_similarity`.
+
+    This is the regression guard on lowering the threshold: drop it far enough and
+    these genuinely different openings start collapsing into one.
+    """
+    vectors = {title: _recorded_title_vec(title) for title in _RECORDED_TITLES}
+    assert all(len(vector) == 1536 for vector in vectors.values())
+
+    for left, right in itertools.combinations(_RECORDED_TITLES, 2):
+        similarity = _cosine(vectors[left], vectors[right])
+        assert similarity < settings.dedup_vector_similarity, (
+            f"{left!r} vs {right!r} embed at {similarity:.4f}, at or above the "
+            f"{settings.dedup_vector_similarity} gate — two real openings would merge"
+        )
+
+
+def test_seniority_variants_are_not_near_identical_in_practice() -> None:
+    """Corrects a claim this suite previously asserted without measuring.
+
+    The seniority guard in `_similar_pairs` was justified by "Senior X embeds
+    near-identically to X, so the cosine gate can't separate them". On the recorded
+    vectors the closest seniority pair we have sits near 0.68 — well under the 0.92
+    gate, which would have separated them unaided.
+
+    The guard still earns its place: one pair is not a study, the pair here differs in
+    specialization as well as seniority, and merging two real openings is the worst failure
+    this stage has. The claim this pins is only "not near-identical" — hence the single
+    loose bound. A tighter window would assert precision this measurement does not have.
+    """
+    similarity = _cosine(
+        _recorded_title_vec("Data Scientist, Applied Science"),
+        _recorded_title_vec("Senior Data Scientist"),
+    )
+    assert similarity < 0.85
