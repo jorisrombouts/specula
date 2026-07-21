@@ -153,7 +153,9 @@ async def test_recorded_ingest_is_additive_over_seeded_demo_data() -> None:
         assert {p.content_hash for p in new_postings}.isdisjoint(seeded_content_hashes)
         assert len(postings_after) == len(seeded_content_hashes) + len(new_postings)
 
-        extracted = next(p for p in new_postings if p.title == "Senior Backend Engineer")
+        # The demo persona targets Data Scientist / ML roles, so fetch.py's relevance gate
+        # keeps the board's "Staff Data Scientist" and drops its backend/PM postings.
+        extracted = next(p for p in new_postings if p.title == "Staff Data Scientist")
         assert extracted.required_skills  # a real extraction, not a placeholder
 
         # The seeder's own Run row is untouched — ingest_company never writes to `runs`.

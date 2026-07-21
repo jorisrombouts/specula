@@ -11,7 +11,12 @@ from test_db import requires_db
 from specula_api.config import Settings
 from specula_api.db.models import Approval, Company, Lens, Targeting
 from specula_api.pipeline.deps import PipelineDeps
-from specula_api.pipeline.discovery import DiscoverResult, build_seed_queries, discover
+from specula_api.pipeline.discovery import (
+    DiscoverResult,
+    _region_hint,
+    build_seed_queries,
+    discover,
+)
 from specula_api.pipeline.http import RecordedFetcher
 from specula_api.pipeline.openai_client import EnrichResult, ExtractionResult, Source
 
@@ -98,7 +103,7 @@ async def test_discover_writes_new_approvals_for_resolved_candidates(
     lens = await _seed_targeting_and_lens(db_session, user.id)
 
     queries = build_seed_queries(["ML Engineer"], [lens], cap=5)
-    assert queries == ["ML Engineer fintech Remote EU"]
+    assert queries == ["ML Engineer jobs Remote EU"]
 
     sources_by_query = {
         queries[0]: [
@@ -200,29 +205,88 @@ async def test_discover_returns_zero_result_without_role_titles(db_session: Asyn
 # --- build_seed_queries ---------------------------------------------------------
 
 
-def test_build_seed_queries_combines_role_title_seeds_and_scope() -> None:
+def test_build_seed_queries_composes_role_and_region_hint() -> None:
     lens = Lens(user_id=uuid4(), name="Fintech", seeds=["fintech"], scope="Remote EU", active=True)
     assert build_seed_queries(["Staff Backend Engineer"], [lens], cap=5) == [
-        "Staff Backend Engineer fintech Remote EU"
+        "Staff Backend Engineer jobs Remote EU"
     ]
 
 
+def test_build_seed_queries_ignores_lens_seeds() -> None:
+    """Seeds deliberately do NOT enter the query — the web_search tool is already
+    domain-filtered to ATS hosts, and the old seed-stuffed queries returned 0 sources live."""
+    lens = Lens(user_id=uuid4(), name="Fintech", seeds=["fintech"], scope="ES", active=True)
+    assert build_seed_queries(["ML Engineer"], [lens], cap=5) == ["ML Engineer jobs Spain"]
+
+
 def test_build_seed_queries_only_includes_active_lenses() -> None:
-    active = Lens(user_id=uuid4(), name="A", seeds=["fintech"], scope="", active=True)
-    inactive = Lens(user_id=uuid4(), name="B", seeds=["climate"], scope="", active=False)
+    active = Lens(user_id=uuid4(), name="A", seeds=["fintech"], scope="ES", active=True)
+    inactive = Lens(user_id=uuid4(), name="B", seeds=["climate"], scope="DE", active=False)
     queries = build_seed_queries(["ML Engineer"], [active, inactive], cap=10)
-    assert queries == ["ML Engineer fintech"]
+    assert queries == ["ML Engineer jobs Spain"]
 
 
 def test_build_seed_queries_dedups_identical_compositions() -> None:
-    lens1 = Lens(user_id=uuid4(), name="A", seeds=["fintech"], scope="", active=True)
-    lens2 = Lens(user_id=uuid4(), name="B", seeds=["fintech"], scope="", active=True)
+    lens1 = Lens(user_id=uuid4(), name="A", seeds=["fintech"], scope="ES", active=True)
+    lens2 = Lens(user_id=uuid4(), name="B", seeds=["climate"], scope="ES", active=True)
     queries = build_seed_queries(["ML Engineer"], [lens1, lens2], cap=10)
-    assert queries == ["ML Engineer fintech"]
+    assert queries == ["ML Engineer jobs Spain"]
 
 
 def test_build_seed_queries_respects_cap() -> None:
-    lens1 = Lens(user_id=uuid4(), name="A", seeds=["fintech"], scope="", active=True)
-    lens2 = Lens(user_id=uuid4(), name="B", seeds=["climate"], scope="", active=True)
+    lens1 = Lens(user_id=uuid4(), name="A", seeds=["fintech"], scope="ES", active=True)
+    lens2 = Lens(user_id=uuid4(), name="B", seeds=["climate"], scope="DE", active=True)
     queries = build_seed_queries(["ML Engineer", "Data Scientist"], [lens1, lens2], cap=3)
     assert len(queries) == 3
+
+
+def test_build_seed_queries_role_titles_are_the_outer_loop() -> None:
+    """Every active lens is queried for the first role title before moving to the next role
+    title — this is what gives the first `cap` queries variety across roles when the cap is
+    hit mid-role, instead of exhausting one role across every lens first."""
+    lens_de = Lens(user_id=uuid4(), name="A", seeds=["fintech"], scope="DE", active=True)
+    lens_es = Lens(user_id=uuid4(), name="B", seeds=["climate"], scope="ES", active=True)
+    queries = build_seed_queries(["ML Engineer", "Data Scientist"], [lens_de, lens_es], cap=10)
+    assert queries == [
+        "ML Engineer jobs Germany",
+        "ML Engineer jobs Spain",
+        "Data Scientist jobs Germany",
+        "Data Scientist jobs Spain",
+    ]
+
+
+# --- _region_hint ---------------------------------------------------------------
+
+
+def test_region_hint_maps_known_country_codes() -> None:
+    assert _region_hint(Lens(user_id=uuid4(), name="A", scope="ES", active=True)) == "Spain"
+    assert _region_hint(Lens(user_id=uuid4(), name="A", scope="DE", active=True)) == "Germany"
+    assert _region_hint(Lens(user_id=uuid4(), name="A", scope="NL", active=True)) == "Netherlands"
+
+
+def test_region_hint_uses_first_segment_of_a_city_country_scope() -> None:
+    lens = Lens(user_id=uuid4(), name="A", scope="Berlin, DE", active=True)
+    assert _region_hint(lens) == "Berlin"
+
+
+def test_region_hint_any_region_scope_falls_back_to_remote_or_eu_name_cue() -> None:
+    remote_lens = Lens(user_id=uuid4(), name="Remote EU roles", scope="Any region", active=True)
+    eu_lens = Lens(user_id=uuid4(), name="EU-wide", scope="Any region", active=True)
+    assert _region_hint(remote_lens) == "remote EU"
+    assert _region_hint(eu_lens) == "remote EU"
+
+
+def test_region_hint_any_region_scope_without_remote_or_eu_name_is_empty() -> None:
+    lens = Lens(user_id=uuid4(), name="All", scope="Any region", active=True)
+    assert _region_hint(lens) == ""
+
+
+def test_region_hint_blank_scope_and_generic_name_is_empty() -> None:
+    lens = Lens(user_id=uuid4(), name="Foreign HQ", scope="", active=True)
+    assert _region_hint(lens) == ""
+
+
+def test_region_hint_scope_takes_precedence_over_name_cue() -> None:
+    """A real scope wins even when the lens name happens to mention 'remote'/'eu'."""
+    lens = Lens(user_id=uuid4(), name="Remote EU", scope="ES", active=True)
+    assert _region_hint(lens) == "Spain"

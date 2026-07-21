@@ -114,6 +114,39 @@ async def test_enrich_company_prefers_llm_values_and_detects_ats(
 
 
 @requires_db
+async def test_enrich_company_passes_html_reduced_page_text_to_llm(
+    db_session: AsyncSession,
+) -> None:
+    """The fetched page is reduced via html_to_text() before it reaches the LLM — raw HTML
+    overflowed the 128k context on a real run (context_length_exceeded)."""
+    user = await make_user(db_session)
+    await set_tenant(db_session, user.id)
+    company = Company(user_id=user.id, name="Acme", domain="acme.com")
+    db_session.add(company)
+    await db_session.flush()
+
+    html = (
+        "<html><body>"
+        "<script>track();</script>"
+        "<h1>Acme Corp</h1>"
+        "<p>We build   distributed   systems.</p>"
+        "</body></html>"
+    )
+    openai = _StubOpenAI(EnrichResult())
+    fetcher = _StubFetcher(FetchedDoc(url="https://acme.com", status=200, text=html))
+
+    await enrich_company(company, _deps(openai, fetcher))
+
+    assert openai.calls == [
+        {
+            "name": "Acme",
+            "domain": "acme.com",
+            "page_text": "Acme Corp We build distributed systems.",
+        }
+    ]
+
+
+@requires_db
 async def test_enrich_company_falls_back_to_existing_company_fields(
     db_session: AsyncSession,
 ) -> None:
@@ -267,3 +300,58 @@ async def test_ingest_company_extracts_and_embeds_shell_postings_after_fetch(
     assert len(refreshed.title_vec) == 1536
     assert refreshed.skills_vec is not None
     assert len(refreshed.skills_vec) == 1536
+
+
+@requires_db
+async def test_ingest_company_caps_llm_extraction_at_ingest_max_postings(
+    db_session: AsyncSession,
+) -> None:
+    """A big board can leave hundreds of shells needing extraction; ingest_company must only
+    LLM-extract `settings.ingest_max_postings` of them per run (a 662-job board would otherwise
+    fire 600+ extraction calls) — the most-recently-seen shells go first, the rest stay
+    `title IS NULL` for a later run to pick up."""
+    user = await make_user(db_session)
+    await set_tenant(db_session, user.id)
+    company = Company(user_id=user.id, name="Acme", domain="acme.com")
+    db_session.add(company)
+    await db_session.flush()
+    company_id = company.id
+
+    shells = [
+        Posting(
+            user_id=user.id,
+            company_id=company.id,
+            source="scrape",
+            source_url=f"https://acme.com/jobs/{i}",
+            content_hash=f"shell-{i}",
+            first_seen_at=datetime(2026, 7, i + 1, tzinfo=UTC),
+        )
+        for i in range(3)
+    ]
+    db_session.add_all(shells)
+    await db_session.flush()
+    oldest_id, middle_id, newest_id = (s.id for s in shells)  # first_seen_at ascending
+
+    extract_result = ExtractionResult(
+        title="Senior Backend Engineer", required_skills=["Python"], extraction_confidence=80
+    )
+    openai = _StubOpenAI(EnrichResult(), extract_result=extract_result)
+    fetcher = _StubFetcher(FetchedDoc(url="https://acme.com/jobs/0", status=200, text="job text"))
+    deps = PipelineDeps(
+        openai=openai,
+        fetcher=fetcher,
+        settings=Settings(ingest_max_postings=2),
+        now=lambda: datetime(2026, 7, 10, tzinfo=UTC),
+    )
+
+    await ingest_company(db_session, user.id, company_id, deps)
+
+    newest = await db_session.get(Posting, newest_id)
+    middle = await db_session.get(Posting, middle_id)
+    oldest = await db_session.get(Posting, oldest_id)
+    assert newest is not None
+    assert middle is not None
+    assert oldest is not None
+    assert newest.title is not None  # extracted
+    assert middle.title is not None  # extracted
+    assert oldest.title is None  # left for a later run — cap of 2 hit

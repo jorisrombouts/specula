@@ -1,0 +1,33 @@
+{
+ "title": "Staff Data Scientist",
+ "role_family": "Data Science",
+ "city": "Berlin",
+ "country": "DE",
+ "hq_country": "US",
+ "work_mode": "hybrid",
+ "seniority": "staff",
+ "education": null,
+ "required_skills": [
+  "Python",
+  "SQL",
+  "Statistics"
+ ],
+ "nice_to_have": [
+  "dbt",
+  "Airflow"
+ ],
+ "visa": "sponsorship available",
+ "languages": [
+  "English"
+ ],
+ "contract": "full-time",
+ "geo": "EU",
+ "salary_text": null,
+ "deadline_at": "2026-09-01",
+ "posted_at": "2026-06-01",
+ "responsibilities": [
+  "Build forecasting and experimentation models"
+ ],
+ "summary": "Staff data science role at Acme Corp.",
+ "extraction_confidence": 84
+}
