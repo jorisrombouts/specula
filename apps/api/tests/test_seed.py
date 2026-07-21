@@ -1,3 +1,4 @@
+import uuid
 from collections.abc import Sequence
 from dataclasses import replace
 from datetime import UTC, datetime
@@ -15,7 +16,7 @@ from specula_api.pipeline.openai_client import (
     RecordedOpenAIClient,
     Source,
 )
-from specula_api.seed import DEMO_GOOGLE_SUB, seed
+from specula_api.seed import seed
 from specula_api.services.approval import apply_decision
 from specula_api.services.run import create_run, ingest_company, latest_run
 
@@ -25,6 +26,14 @@ _FROZEN_NOW = datetime(2026, 7, 5, tzinfo=UTC)
 # "acme.com" no longer resolves to the greenhouse board "acme" (it would have been someone
 # else's). The token is still "acme", so the recorded fixtures key identically.
 _NEW_COMPANY_DOMAIN = "acme.job-boards.greenhouse.io"
+
+
+# Seeding WIPES the target tenant, so these tests must never target the demo user: a test
+# run would destroy whatever a live pipeline run had ingested there. The `test-sub-` prefix
+# is what conftest's session-end sweep collects, so the tenant is cleaned up after the run.
+def _seed_identity() -> dict[str, str]:
+    sub = f"test-sub-seed-{uuid.uuid4()}"
+    return {"google_sub": sub, "email": f"{sub}@example.com", "name": "Seed Test User"}
 
 
 class _RecordedExceptRationale:
@@ -66,20 +75,21 @@ class _RecordedExceptRationale:
 
 @requires_db
 async def test_seed_is_idempotent_and_seeds_low_confidence_posting() -> None:
+    identity = _seed_identity()
     # Run twice; the demo user and its row counts must be stable (no duplication).
     async with async_session() as session:
-        await seed(session)
+        await seed(session, **identity)
         await session.commit()
     async with async_session() as session:
-        await seed(session)
+        await seed(session, **identity)
         await session.commit()
 
     async with async_session() as session:
-        demo_users = (
-            await session.scalars(select(User).where(User.google_sub == DEMO_GOOGLE_SUB))
+        seeded_users = (
+            await session.scalars(select(User).where(User.google_sub == identity["google_sub"]))
         ).all()
-        assert len(demo_users) == 1
-        uid = demo_users[0].id
+        assert len(seeded_users) == 1
+        uid = seeded_users[0].id
 
         # Tenant context needed to read the FORCE-RLS'd postings.
         await session.execute(
@@ -100,14 +110,17 @@ async def test_recorded_ingest_is_additive_over_seeded_demo_data() -> None:
     `unique(user_id, content_hash)` / `unique(user_id, domain)`, leaves every already-seeded
     row untouched, and doesn't disturb the seeder's own `Run` row until a later run
     supersedes it."""
+    identity = _seed_identity()
     async with async_session() as session:
-        await seed(session)
+        await seed(session, **identity)
         await session.commit()
 
     async with async_session() as session:
-        demo_user = await session.scalar(select(User).where(User.google_sub == DEMO_GOOGLE_SUB))
-        assert demo_user is not None
-        uid = demo_user.id
+        seeded_user = await session.scalar(
+            select(User).where(User.google_sub == identity["google_sub"])
+        )
+        assert seeded_user is not None
+        uid = seeded_user.id
         await session.execute(
             text("SELECT set_config('app.user_id', :uid, true)").bindparams(uid=str(uid))
         )

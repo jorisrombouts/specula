@@ -885,14 +885,16 @@ _APPROVALS: list[dict[str, Any]] = [
 ]
 
 
-async def _get_or_create_demo_user(session: AsyncSession) -> User:
-    user = await session.scalar(select(User).where(User.google_sub == DEMO_GOOGLE_SUB))
+async def _get_or_create_user(
+    session: AsyncSession, *, google_sub: str, email: str, name: str
+) -> User:
+    user = await session.scalar(select(User).where(User.google_sub == google_sub))
     if user is None:
-        user = User(google_sub=DEMO_GOOGLE_SUB, email=DEMO_EMAIL, name=DEMO_NAME)
+        user = User(google_sub=google_sub, email=email, name=name)
         session.add(user)
         await session.flush()
     else:
-        user.name = DEMO_NAME
+        user.name = name
     return user
 
 
@@ -902,14 +904,24 @@ async def _set_tenant(session: AsyncSession, user_id: object) -> None:
     )
 
 
-async def seed(session: AsyncSession) -> None:
-    user = await _get_or_create_demo_user(session)
+async def seed(
+    session: AsyncSession,
+    *,
+    google_sub: str = DEMO_GOOGLE_SUB,
+    email: str = DEMO_EMAIL,
+    name: str = DEMO_NAME,
+) -> None:
+    """Seed a tenant with the demo dataset. Defaults to the demo user, which `just seed`
+    resets deliberately. Tests MUST pass their own identity: seeding wipes the target
+    tenant's rows, and a test run that targeted the demo user would destroy whatever a
+    live pipeline run had ingested there."""
+    user = await _get_or_create_user(session, google_sub=google_sub, email=email, name=name)
     uid = user.id
 
     # All per-user reads/writes below require the tenant GUC (FORCE RLS).
     await _set_tenant(session, uid)
 
-    # Idempotent reset: clear the demo user's rows (RLS scopes each delete to them).
+    # Idempotent reset: clear this user's rows (RLS scopes each delete to them).
     for model in _TENANT_TABLES:
         await session.execute(delete(model))
 
