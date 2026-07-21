@@ -7,7 +7,13 @@ import pytest
 import respx
 
 from specula_api.config import Settings
-from specula_api.pipeline.http import Disallowed, PoliteFetcher, RecordedFetcher
+from specula_api.pipeline.http import (
+    MAX_RETRY_AFTER_S,
+    BlockedTarget,
+    Disallowed,
+    PoliteFetcher,
+    RecordedFetcher,
+)
 
 
 def _settings(**overrides: object) -> Settings:
@@ -167,3 +173,101 @@ async def test_recorded_fetcher_miss_returns_404(tmp_path: Path) -> None:
     assert doc.text == ""
     assert doc.url == "https://acme.example/never-recorded"
     await fetcher.aclose()
+
+
+# --- SSRF guard ----------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://169.254.169.254/latest/meta-data/",  # cloud instance metadata
+        "http://127.0.0.1:8000/admin",
+        "http://10.0.0.5/internal",
+        "http://192.168.1.1/",
+        "http://[::1]/x",
+        "http://localhost:5432/",
+        "http://db.internal/",
+        "file:///etc/passwd",
+        "mailto:careers@acme.example",
+        "javascript:alert(1)",
+    ],
+)
+async def test_non_public_targets_are_refused(fetcher: PoliteFetcher, url: str) -> None:
+    """A posting's source_url comes from third-party ATS JSON or a scraped href — untrusted
+    input that is later re-fetched, so it must not be able to reach loopback/link-local/
+    private targets or non-http schemes."""
+    with pytest.raises(BlockedTarget):
+        await fetcher.get(url)
+
+
+async def test_blocked_target_is_a_disallowed_so_adapters_already_handle_it(
+    fetcher: PoliteFetcher,
+) -> None:
+    # Adapters translate Disallowed into BoardUnavailable; a blocked target must ride the
+    # same path rather than mass-closing the company's postings.
+    assert issubclass(BlockedTarget, Disallowed)
+
+
+async def test_public_host_is_still_fetched(fetcher: PoliteFetcher) -> None:
+    with respx.mock(assert_all_called=False) as router:
+        router.get("https://acme.example/robots.txt").respond(404)
+        router.get("https://acme.example/jobs").respond(200, text="ok")
+
+        doc = await fetcher.get("https://acme.example/jobs")
+
+    assert doc.status == 200
+
+
+async def test_redirect_onto_a_blocked_target_is_refused(fetcher: PoliteFetcher) -> None:
+    """robots + the guard are checked on the requested URL; a redirect must not be able to
+    launder the fetch onto a private address."""
+    with respx.mock(assert_all_called=False) as router:
+        router.get("https://acme.example/robots.txt").respond(404)
+        router.get("https://acme.example/jobs").respond(
+            302, headers={"Location": "http://169.254.169.254/latest/meta-data/"}
+        )
+        router.get("http://169.254.169.254/latest/meta-data/").respond(200, text="secrets")
+
+        with pytest.raises(BlockedTarget):
+            await fetcher.get("https://acme.example/jobs")
+
+
+# --- Retry-After bound ---------------------------------------------------------
+
+
+async def test_absurd_retry_after_is_not_slept_off(
+    fetcher: PoliteFetcher, no_real_sleep: list[float]
+) -> None:
+    """`Retry-After: 86400` must not park the run for a day. This executes inside a FastAPI
+    BackgroundTask holding an open tenant_session, so an unbounded sleep pins a DB connection.
+    We give up and surface the 429 (which adapters turn into BoardUnavailable) instead."""
+    with respx.mock(assert_all_called=False) as router:
+        router.get("https://acme.example/robots.txt").respond(404)
+        route = router.get("https://acme.example/jobs").respond(
+            429, headers={"Retry-After": "86400"}
+        )
+
+        doc = await fetcher.get("https://acme.example/jobs")
+
+        assert route.call_count == 1  # gave up rather than waiting it out
+
+    assert doc.status == 429
+    assert all(delay <= MAX_RETRY_AFTER_S for delay in no_real_sleep), no_real_sleep
+
+
+async def test_reasonable_retry_after_is_still_honoured(
+    fetcher: PoliteFetcher, no_real_sleep: list[float]
+) -> None:
+    with respx.mock(assert_all_called=False) as router:
+        router.get("https://acme.example/robots.txt").respond(404)
+        route = router.get("https://acme.example/jobs")
+        route.side_effect = [
+            httpx.Response(429, headers={"Retry-After": "2"}, text="slow down"),
+            httpx.Response(200, text="ok"),
+        ]
+
+        doc = await fetcher.get("https://acme.example/jobs")
+
+    assert doc.status == 200
+    assert 2.0 in no_real_sleep

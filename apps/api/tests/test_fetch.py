@@ -199,6 +199,29 @@ async def test_fetch_postings_closes_postings_missing_from_rerun(
 
 
 @requires_db
+async def test_fetch_postings_closes_everything_when_the_board_is_genuinely_empty(
+    db_session: AsyncSession, stub_resolve_adapter: list[_StubAdapter]
+) -> None:
+    """The counterpart to the BoardUnavailable guard: a board that WAS read and lists nothing
+    really does mean every posting closed. Only an unreadable board must be spared, so this
+    pins that sparing failures didn't cost us the legitimate close-out."""
+    user = await make_user(db_session)
+    await set_tenant(db_session, user.id)
+    company = await _make_company(db_session, user.id)
+    stub_resolve_adapter[0] = _StubAdapter([RAW_A, RAW_B])
+    await fetch_postings(db_session, user.id, company, _deps(datetime(2026, 7, 5, tzinfo=UTC)))
+
+    stub_resolve_adapter[0] = _StubAdapter([])  # read successfully, lists nothing
+    result = await fetch_postings(
+        db_session, user.id, company, _deps(datetime(2026, 7, 6, tzinfo=UTC))
+    )
+
+    assert result == FetchResult(found=0, new=0, closed=2, errors=0)
+    postings = (await db_session.scalars(select(Posting).where(Posting.user_id == user.id))).all()
+    assert all(p.still_open is False for p in postings)
+
+
+@requires_db
 async def test_fetch_postings_does_not_mass_close_when_adapter_raises(
     db_session: AsyncSession, stub_resolve_adapter: list[_StubAdapter]
 ) -> None:
