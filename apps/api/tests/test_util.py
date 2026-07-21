@@ -1,4 +1,6 @@
-from specula_api.pipeline.util import html_to_text, title_matches_roles
+import pytest
+
+from specula_api.pipeline.util import html_to_text, title_matches_roles, to_country_code
 
 # --- title_matches_roles ---------------------------------------------------------
 
@@ -68,3 +70,44 @@ def test_html_to_text_truncates_to_max_chars() -> None:
 
     assert len(result) == 20
     assert result == ("word " * 100).strip()[:20]
+
+
+# --- to_country_code --------------------------------------------------------------
+
+
+def test_to_country_code_passes_alpha2_through_uppercased() -> None:
+    assert to_country_code("ES") == "ES"
+    assert to_country_code("es") == "ES"
+    assert to_country_code("gb") == "GB"
+
+
+def test_to_country_code_resolves_full_names() -> None:
+    assert to_country_code("Spain") == "ES"
+    assert to_country_code("United Kingdom") == "GB"
+    assert to_country_code("Netherlands") == "NL"
+    assert to_country_code("Czechia") == "CZ"
+    assert to_country_code("Czech Republic") == "CZ"
+    assert to_country_code("United States") == "US"
+
+
+def test_to_country_code_resolves_common_variants() -> None:
+    assert to_country_code("UK") == "GB"
+    assert to_country_code("USA") == "US"
+
+
+@pytest.mark.parametrize(
+    "word",
+    ["Global", "Remote", "Worldwide", "EMEA", "EU", "Europe", "Anywhere", "LATAM", "APAC"],
+)
+def test_to_country_code_rejects_non_country_words(word: str) -> None:
+    assert to_country_code(word) is None
+
+
+def test_to_country_code_none_and_blank_are_none() -> None:
+    assert to_country_code(None) is None
+    assert to_country_code("") is None
+    assert to_country_code("   ") is None
+
+
+def test_to_country_code_unknown_gibberish_is_none_never_a_wrong_code() -> None:
+    assert to_country_code("Qwxzplorf Nonexistica") is None

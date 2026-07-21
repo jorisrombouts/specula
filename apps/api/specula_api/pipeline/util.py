@@ -1,10 +1,71 @@
 """Small helpers shared across pipeline stages."""
 
+import pycountry
 from selectolax.parser import HTMLParser
 
 # Raw fetched job/careers pages can be 100k+ tokens of HTML — far over the model
 # context window. Strip to visible text and cap to a safe budget before any LLM call.
 _MAX_PAGE_CHARS = 24000
+
+# Words the LLM sometimes puts in a country field that are regions/remote markers, not
+# countries. Must be rejected BEFORE consulting pycountry — its fuzzy search would
+# otherwise happily map e.g. "EU" onto some unrelated country (see `to_country_code`).
+_NON_COUNTRY_WORDS = {
+    "global",
+    "remote",
+    "worldwide",
+    "emea",
+    "eu",
+    "europe",
+    "anywhere",
+    "latam",
+    "apac",
+}
+
+# Common variants that pycountry's exact lookup() doesn't resolve and whose fuzzy search
+# is ambiguous (e.g. "UK" fuzzy-matches 20+ countries sharing a substring) rather than
+# genuinely unresolvable — handled explicitly instead of trusting the fuzzy guard.
+_COUNTRY_ALIASES = {
+    "uk": "GB",
+}
+
+
+def to_country_code(value: str | None) -> str | None:
+    """Normalize a country as extracted/enriched by the LLM to an ISO 3166-1 alpha-2 code.
+
+    None/blank -> None. An existing valid alpha-2 code passes through (uppercased). Full
+    names and common variants ("Spain", "United Kingdom", "UK", "USA") resolve via
+    `pycountry`'s exact lookup, a small alias map for cases lookup/fuzzy don't cover, and
+    finally a guarded fuzzy search (accepted only when it returns a single, unambiguous
+    match — fuzzy search can otherwise match loosely on unrelated countries). Non-country
+    words (region/remote markers like "Global", "EU") and anything else unresolved become
+    None — never a bogus code.
+    """
+    if value is None:
+        return None
+    cleaned = value.strip()
+    if not cleaned:
+        return None
+    lowered = cleaned.casefold()
+    if lowered in _NON_COUNTRY_WORDS:
+        return None
+    if len(cleaned) == 2 and cleaned.isalpha():
+        country = pycountry.countries.get(alpha_2=cleaned.upper())
+        if country is not None:
+            return str(country.alpha_2)
+    if lowered in _COUNTRY_ALIASES:
+        return _COUNTRY_ALIASES[lowered]
+    try:
+        return str(pycountry.countries.lookup(cleaned).alpha_2)
+    except LookupError:
+        pass
+    try:
+        matches = pycountry.countries.search_fuzzy(cleaned)
+    except LookupError:
+        return None
+    if len(matches) == 1:
+        return str(matches[0].alpha_2)
+    return None
 
 
 def favicon_url(domain: str) -> str:

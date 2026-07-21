@@ -4,7 +4,7 @@ from specula_api.db.models import Company
 from specula_api.pipeline.deps import PipelineDeps
 from specula_api.pipeline.openai_client import EnrichResult
 from specula_api.pipeline.source import detect_ats
-from specula_api.pipeline.util import html_to_text
+from specula_api.pipeline.util import html_to_text, to_country_code
 
 
 async def enrich_company(company: Company, deps: PipelineDeps) -> EnrichResult:
@@ -26,7 +26,7 @@ async def enrich_company(company: Company, deps: PipelineDeps) -> EnrichResult:
     )
 
     return EnrichResult(
-        hq_country=llm.hq_country or company.hq_country,
+        hq_country=to_country_code(llm.hq_country) or company.hq_country,
         hq_confidence=llm.hq_confidence,
         comp_estimate=llm.comp_estimate,
         careers_url=llm.careers_url or company.careers_url,

@@ -12,11 +12,16 @@ from typing import Protocol, TypeVar
 from openai import AsyncOpenAI
 from openai.types.responses import Response, ResponseFunctionWebSearch, WebSearchToolParam
 from openai.types.responses.response_function_web_search import ActionSearch
-from pydantic import BaseModel, TypeAdapter
+from pydantic import BaseModel, Field, TypeAdapter
 
 from specula_api.config import Settings
 
 _EMBED_DIM = 1536
+
+_COUNTRY_DESC = (
+    "ISO 3166-1 alpha-2 country code, uppercase (e.g. ES, DE, GB); null if not stated or "
+    "not a single country."
+)
 
 # ---------------------------------------------------------------------------
 # Result models (internal — snake_case, not exposed over the API directly)
@@ -29,7 +34,7 @@ class Source(BaseModel):
 
 
 class EnrichResult(BaseModel):
-    hq_country: str | None = None
+    hq_country: str | None = Field(default=None, description=_COUNTRY_DESC)
     hq_confidence: int | None = None
     comp_estimate: str | None = None
     careers_url: str | None = None
@@ -42,8 +47,8 @@ class ExtractionResult(BaseModel):
     title: str
     role_family: str | None = None
     city: str | None = None
-    country: str | None = None
-    hq_country: str | None = None
+    country: str | None = Field(default=None, description=_COUNTRY_DESC)
+    hq_country: str | None = Field(default=None, description=_COUNTRY_DESC)
     work_mode: str | None = None
     seniority: str | None = None
     education: str | None = None
@@ -141,7 +146,8 @@ class OpenAIResponsesClient:
             system=(
                 "Enrich the company record below with HQ country, comp estimate, careers URL "
                 "and ATS if determinable from the page text. Leave fields null when not "
-                "evidenced — never guess."
+                "evidenced — never guess. hq_country must be an ISO 3166-1 alpha-2 country "
+                "code, uppercase (e.g. ES, DE, GB) — never a full country name or a region."
             ),
             user=user,
         )
@@ -157,7 +163,9 @@ class OpenAIResponsesClient:
             system=(
                 "Extract structured job posting fields from the page text below. Set "
                 "extraction_confidence (0-100) to reflect how much of the schema was directly "
-                "evidenced in the text rather than inferred."
+                "evidenced in the text rather than inferred. country and hq_country must each "
+                "be an ISO 3166-1 alpha-2 country code, uppercase (e.g. ES, DE, GB) — never a "
+                "full country name or a region; null if not a single determinable country."
             ),
             user=user,
         )
