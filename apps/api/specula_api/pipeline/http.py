@@ -2,6 +2,7 @@
 
 import asyncio
 import hashlib
+import ipaddress
 import json
 import time
 from pathlib import Path
@@ -17,6 +18,14 @@ from specula_api.config import Settings
 _MAX_ATTEMPTS = 3
 _RETRYABLE_STATUSES = {429}
 
+# Longer than this and we stop waiting: the crawl runs inside a FastAPI BackgroundTask that
+# holds an open tenant_session, so honouring a `Retry-After: 86400` would pin a DB connection
+# for a day. We surface the 429 instead, which adapters turn into BoardUnavailable.
+MAX_RETRY_AFTER_S = 30.0
+
+_ALLOWED_SCHEMES = frozenset({"http", "https"})
+_NON_PUBLIC_HOST_SUFFIXES = (".localhost", ".internal", ".local")
+
 
 class FetchedDoc(BaseModel):
     url: str
@@ -26,7 +35,20 @@ class FetchedDoc(BaseModel):
 
 
 class Disallowed(Exception):
-    """Raised when robots.txt disallows fetching a URL."""
+    """Raised when a URL must not be fetched — robots.txt, or a blocked target."""
+
+
+class BlockedTarget(Disallowed):
+    """The URL is not a public http(s) endpoint.
+
+    A posting's `source_url` comes from third-party ATS JSON or a scraped `href` and is later
+    re-fetched, so it is untrusted input to the fetcher: without this, a feed could point us
+    at `http://169.254.169.254/...` and the response body would be sent to the LLM and stored.
+    Subclasses `Disallowed` so every adapter's existing handling applies unchanged.
+
+    Scope: scheme, IP literals and obvious local names. A hostname that *resolves* to a
+    private address is not caught — that would need a DNS lookup on every fetch.
+    """
 
 
 class Fetcher(Protocol):
@@ -50,6 +72,7 @@ class PoliteFetcher:
         self._last_hit_monotonic: dict[str, float] = {}
 
     async def get(self, url: str, *, accept: str = "text/html") -> FetchedDoc:
+        _assert_fetchable(url)
         parts = urlsplit(url)
         host = parts.netloc
         robots = await self._robots_for(host, parts.scheme or "https")
@@ -63,6 +86,9 @@ class PoliteFetcher:
             # Dead host, DNS failure, timeout, connection reset — a crawler skips a
             # bad URL, it never crashes the run. Downstream treats non-200 as "no page".
             return FetchedDoc(url=url, status=0, text="")
+        # The client follows redirects, so re-check where we actually landed: a 302 must not
+        # be able to launder the fetch onto a target the guard just refused.
+        _assert_fetchable(str(response.url))
         return FetchedDoc(
             url=str(response.url),
             status=response.status_code,
@@ -110,17 +136,42 @@ class PoliteFetcher:
             retryable = response.status_code in _RETRYABLE_STATUSES or response.status_code >= 500
             if not retryable or attempt >= _MAX_ATTEMPTS:
                 return response
-            await asyncio.sleep(_retry_delay(response, attempt))
+            delay = _retry_delay(response, attempt)
+            if delay is None:
+                return response  # asked to wait longer than we're willing to hold the run
+            await asyncio.sleep(delay)
             attempt += 1
 
 
-def _retry_delay(response: httpx.Response, attempt: int) -> float:
+def _assert_fetchable(url: str) -> None:
+    """Refuse anything that isn't a public http(s) endpoint. See `BlockedTarget`."""
+    parts = urlsplit(url)
+    if parts.scheme not in _ALLOWED_SCHEMES:
+        raise BlockedTarget(f"refusing {url!r}: scheme {parts.scheme!r} is not http(s)")
+    hostname = parts.hostname
+    if not hostname:
+        raise BlockedTarget(f"refusing {url!r}: no host")
+    lowered = hostname.lower()
+    if lowered == "localhost" or lowered.endswith(_NON_PUBLIC_HOST_SUFFIXES):
+        raise BlockedTarget(f"refusing {url!r}: non-public host {hostname!r}")
+    try:
+        address = ipaddress.ip_address(lowered)
+    except ValueError:
+        return  # a name, not a literal — not resolved here (see BlockedTarget's docstring)
+    if not address.is_global or address.is_multicast:
+        raise BlockedTarget(f"refusing {url!r}: non-public address {address}")
+
+
+def _retry_delay(response: httpx.Response, attempt: int) -> float | None:
+    """Seconds to wait before retrying, or None to stop retrying altogether."""
     retry_after = response.headers.get("Retry-After")
     if retry_after is not None:
         try:
-            return float(retry_after)
+            requested = float(retry_after)
         except ValueError:
-            pass
+            pass  # an HTTP-date rather than seconds — fall back to exponential backoff
+        else:
+            return requested if requested <= MAX_RETRY_AFTER_S else None
     return 0.5 * (2.0 ** (attempt - 1))
 
 
