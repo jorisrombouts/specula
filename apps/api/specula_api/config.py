@@ -47,6 +47,12 @@ class Settings(BaseSettings):
     # crawled (cheap); only this many are LLM-extracted + scored per ingest.
     ingest_max_postings: int = 25
     low_confidence_threshold: int = 50  # matches services/insights.py LOW_CONFIDENCE_THRESHOLD
+    # Dedup (spec §5): two postings at the same company are the same role when their titles
+    # match on trigram AND their title_vec cosine clears the threshold. Both must hold — the
+    # vector alone conflates sibling roles ("Senior" vs "Staff"), and trigram alone conflates
+    # unrelated roles that share wording ("Engineering Manager" vs "Engineer").
+    dedup_title_similarity: float = 0.45
+    dedup_vector_similarity: float = 0.92
     pipeline_mode: Literal["live", "recorded", "record"] = "live"
     pipeline_execution: Literal["enqueue", "inline"] = "inline"  # no Redis/worker this milestone
     pipeline_fixtures_dir: str | None = None

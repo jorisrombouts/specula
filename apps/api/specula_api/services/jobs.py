@@ -1,7 +1,7 @@
 from datetime import date, timedelta
 from uuid import UUID
 
-from sqlalchemy import Select, func, select
+from sqlalchemy import Select, distinct, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from specula_api.db.models import Company, Lens, Posting, PostingState, Score
@@ -13,6 +13,7 @@ from specula_api.schemas.jobs import (
     JobStateOut,
     LensSummaryOut,
 )
+from specula_api.services.dedup_view import collapse_duplicates
 from specula_api.services.lens_filter import is_default_lens, lens_where
 
 # Location factor by work mode (the lens-independent base). The location factor is
@@ -205,6 +206,9 @@ async def list_jobs(
     selected = next((lens for lens in lenses if str(lens.id) == str(lens_id)), None)
 
     rows = (await session.execute(_pool_stmt(user_id).where(*lens_where(selected)))).all()
+    # The pool is deduped on read (spec §5): one row per dedup_group, so the same role reaching
+    # us from two sources shows once.
+    rows = collapse_duplicates(rows, posting_of=lambda row: row[0])
     jobs = _sort_jobs(
         [_to_job(p, c, s, st, lens=selected, today=today) for p, c, s, st in rows], sort
     )
@@ -215,9 +219,16 @@ async def list_jobs(
     for lens in lenses:
         counts = (
             await session.execute(
+                # Counted over dedup groups, not rows, so a duplicated role can't inflate a
+                # lens badge past what the (deduped) list actually shows. An ungrouped posting
+                # is its own group via the id fallback.
                 select(
-                    func.count().label("total"),
-                    func.count().filter(Posting.posted_at >= new_cutoff).label("new_count"),
+                    func.count(distinct(func.coalesce(Posting.dedup_group, Posting.id))).label(
+                        "total"
+                    ),
+                    func.count(distinct(func.coalesce(Posting.dedup_group, Posting.id)))
+                    .filter(Posting.posted_at >= new_cutoff)
+                    .label("new_count"),
                 )
                 .select_from(Posting)
                 .join(Score, Score.posting_id == Posting.id)

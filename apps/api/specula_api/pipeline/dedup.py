@@ -1,17 +1,23 @@
-"""Dedup stage: minimal same-company title grouping.
+"""Dedup stage: cluster postings that are the same role reaching us from several sources.
 
-# TODO(M3.x): trigram + title_vec cosine clustering across companies/sources — this
-# minimal pass only groups postings within one company that share an exact normalized
-# title.
+Spec §5: cluster on `(company, normalized_title)` trigram match AND `title_vec` cosine
+similarity (~0.92), assign a shared `dedup_group`; the pool is then deduped on read
+(`services/dedup_view.py`).
+
+Clustering is WITHIN a company. Two companies advertising a similarly-titled role are two
+different jobs — collapsing across companies would hide real openings, a far worse failure
+than showing a duplicate.
 """
 
 import re
 import uuid
+from collections.abc import Sequence
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import Float, bindparam, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from specula_api.config import settings
 from specula_api.db.models import Posting
 
 _NON_WORD = re.compile(r"[^a-z0-9]+")
@@ -22,13 +28,77 @@ def normalize_title(title: str) -> str:
     return _NON_WORD.sub(" ", title.lower()).strip()
 
 
-async def dedup_company(session: AsyncSession, user_id: UUID, company_id: UUID) -> None:
-    """Group this company's postings sharing a normalized title into a shared dedup_group.
+class _Clusters:
+    """Union-find over posting ids, so A~B and B~C land in one group."""
 
-    Minimal grouping; # TODO(M3.x): trigram + title_vec cosine clustering across
-    companies/sources. Titles unique within the company are left ungrouped
-    (dedup_group stays None). Reruns reuse an existing group's id when any member
-    already has one, so group identity is stable across ingests.
+    def __init__(self) -> None:
+        self._parent: dict[UUID, UUID] = {}
+
+    def find(self, item: UUID) -> UUID:
+        self._parent.setdefault(item, item)
+        while self._parent[item] != item:
+            self._parent[item] = self._parent[self._parent[item]]
+            item = self._parent[item]
+        return item
+
+    def union(self, a: UUID, b: UUID) -> None:
+        root_a, root_b = self.find(a), self.find(b)
+        if root_a != root_b:
+            self._parent[root_b] = root_a
+
+    def groups(self) -> list[list[UUID]]:
+        out: dict[UUID, list[UUID]] = {}
+        for item in self._parent:
+            out.setdefault(self.find(item), []).append(item)
+        return [members for members in out.values() if len(members) > 1]
+
+
+async def _similar_pairs(
+    session: AsyncSession, user_id: UUID, company_id: UUID
+) -> list[tuple[UUID, UUID]]:
+    """Posting pairs the DB judges near-identical: pg_trgm on the title AND pgvector cosine.
+
+    `a.id < b.id` keeps each pair once. Postings without a `title_vec` are skipped here — the
+    exact-title pass in `dedup_company` still catches those.
+    """
+    a = Posting.__table__.alias("a")
+    b = Posting.__table__.alias("b")
+    cosine_distance = 1.0 - settings.dedup_vector_similarity
+    join_on = (b.c.user_id == a.c.user_id) & (b.c.company_id == a.c.company_id) & (a.c.id < b.c.id)
+    stmt = (
+        select(a.c.id, b.c.id)
+        .select_from(a.join(b, join_on))
+        .where(
+            a.c.user_id == user_id,
+            a.c.company_id == company_id,
+            a.c.title.is_not(None),
+            b.c.title.is_not(None),
+            a.c.title_vec.is_not(None),
+            b.c.title_vec.is_not(None),
+            func.similarity(a.c.title, b.c.title)
+            >= bindparam("trgm", settings.dedup_title_similarity, type_=Float),
+            a.c.title_vec.cosine_distance(b.c.title_vec)
+            <= bindparam("cos", cosine_distance, type_=Float),
+            # Different stated seniority means different openings, not one role seen twice.
+            # Measured: "Data Scientist" vs "Senior Data Scientist" trigram-matches at 0.71
+            # and embeds near-identically, so neither spec threshold separates them.
+            (a.c.seniority.is_(None))
+            | (b.c.seniority.is_(None))
+            | (func.lower(a.c.seniority) == func.lower(b.c.seniority)),
+        )
+    )
+    return [(row[0], row[1]) for row in (await session.execute(stmt)).all()]
+
+
+async def dedup_company(session: AsyncSession, user_id: UUID, company_id: UUID) -> None:
+    """Assign a shared `dedup_group` to this company's same-role postings.
+
+    Two passes, unioned: an exact normalized-title match (which needs no embedding, so it
+    still works for postings that were never embedded), and the trigram+cosine pass above for
+    near-matches such as "Senior ML Engineer" vs "Senior Machine Learning Engineer".
+
+    Reruns reuse an existing group's id when any member already carries one, so group identity
+    is stable across ingests.
     """
     postings = list(
         await session.scalars(
@@ -39,14 +109,24 @@ async def dedup_company(session: AsyncSession, user_id: UUID, company_id: UUID) 
             )
         )
     )
-    groups: dict[str, list[Posting]] = {}
-    for posting in postings:
-        key = normalize_title(posting.title or "")
-        groups.setdefault(key, []).append(posting)
+    if len(postings) < 2:
+        return
 
-    for group in groups.values():
-        if len(group) < 2:
-            continue
+    by_id = {posting.id: posting for posting in postings}
+    clusters = _Clusters()
+
+    by_title: dict[str, list[UUID]] = {}
+    for posting in postings:
+        by_title.setdefault(normalize_title(posting.title or ""), []).append(posting.id)
+    for ids in by_title.values():
+        for other in ids[1:]:
+            clusters.union(ids[0], other)
+
+    for left, right in await _similar_pairs(session, user_id, company_id):
+        clusters.union(left, right)
+
+    for members in clusters.groups():
+        group: Sequence[Posting] = [by_id[item] for item in members if item in by_id]
         existing = next((p.dedup_group for p in group if p.dedup_group is not None), None)
         group_id = existing or uuid.uuid4()
         for posting in group:

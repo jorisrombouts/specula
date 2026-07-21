@@ -99,6 +99,7 @@ async def _seed_pool(sub: str, email: str) -> dict[str, uuid.UUID]:
                 )
             )
 
+        ids["user"] = uid
         ids["all_lens"] = all_lens.id
         ids["foreign_lens"] = foreign_lens.id
         await session.commit()
@@ -294,3 +295,45 @@ async def test_cross_tenant_isolation(migrated_db: None) -> None:
         headers_a = _auth_header(sub_a, email_a)
         job_a = (await client.get(f"/api/v1/jobs/{ids['pA']}", headers=headers_a)).json()
         assert job_a["status"] is None
+
+
+@requires_db
+async def test_dedup_group_collapses_the_pool_and_its_derived_counts(migrated_db: None) -> None:
+    """Spec §5: "the pool is deduped on read."
+
+    pA and pC become one role reaching us twice. The list must show 3, and — because counts
+    are DERIVED from the same pool — the lens badge must read 3 too, not 4. A badge saying 4
+    over a list of 3 is exactly the inconsistency the derived-counts invariant exists to stop.
+    """
+    sub, email = _sub_email()
+    ids = await _seed_pool(sub, email)
+
+    group = uuid.uuid4()
+    async with async_session() as session:
+        await session.execute(
+            text("SELECT set_config('app.user_id', :uid, true)").bindparams(uid=str(ids["user"]))
+        )
+        await session.execute(
+            text("UPDATE postings SET dedup_group = :g WHERE id = ANY(:ids)").bindparams(
+                g=group, ids=[ids["pA"], ids["pC"]]
+            )
+        )
+        await session.commit()
+
+    transport = ASGITransport(app=create_app())
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.get(
+            f"/api/v1/jobs?lens={ids['all_lens']}&sort=match", headers=_auth_header(sub, email)
+        )
+
+    body = resp.json()
+    returned = [j["id"] for j in body["jobs"]]
+    assert len(returned) == 3
+    # pA and pC share confidence, so the representative is whichever the ranking picks — but
+    # exactly one of them may appear.
+    assert len({str(ids["pA"]), str(ids["pC"])} & set(returned)) == 1
+    assert str(ids["pB"]) in returned
+    assert str(ids["pD"]) in returned
+
+    summaries = {lens["name"]: lens for lens in body["lenses"]}
+    assert summaries["All"]["count"] == 3  # derived over groups, not rows

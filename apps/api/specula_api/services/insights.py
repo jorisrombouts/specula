@@ -24,6 +24,7 @@ from specula_api.schemas.insights import (
     Trend,
     TrendSeries,
 )
+from specula_api.services.dedup_view import collapse_duplicates
 
 # extraction_confidence below this is "surfaced, not trusted" — excluded everywhere.
 LOW_CONFIDENCE_THRESHOLD = 50
@@ -50,8 +51,10 @@ def _pct(n: int, total: int) -> int:
 
 
 async def _trusted_postings(session: AsyncSession, user_id: UUID) -> list[Posting]:
+    """Trusted postings, deduped on read: a role listed by two sources is ONE role, so it must
+    not count twice toward skill demand, the mix breakdowns or the trend."""
     rows = await session.scalars(select(Posting).where(Posting.user_id == user_id))
-    return [p for p in rows if _is_trusted(p)]
+    return collapse_duplicates([p for p in rows if _is_trusted(p)])
 
 
 async def _candidate_skills(session: AsyncSession, user_id: UUID) -> set[str]:
