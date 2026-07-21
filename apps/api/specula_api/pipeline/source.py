@@ -13,6 +13,12 @@ from selectolax.parser import HTMLParser
 from specula_api.pipeline.content_hash import content_hash
 from specula_api.pipeline.http import Disallowed, Fetcher
 
+# Hosts discovery's web-search is restricted to. SmartRecruiters is deliberately NOT here:
+# `api.smartrecruiters.com/robots.txt` allows only LinkedInBot on `/v1/companies/` and
+# disallows everyone else, so our polite fetcher (correctly) refuses it and the adapter can
+# never return postings. Surfacing those companies would burn discovery slots on candidates
+# we can't ingest. `SmartRecruitersAdapter` is kept, ready to re-enable if official API
+# access is arranged — we do not work around robots.txt.
 ATS_ALLOWED_DOMAINS = (
     "boards.greenhouse.io",
     "greenhouse.io",
@@ -20,8 +26,6 @@ ATS_ALLOWED_DOMAINS = (
     "lever.co",
     "jobs.ashbyhq.com",
     "ashbyhq.com",
-    "jobs.smartrecruiters.com",
-    "smartrecruiters.com",
     "recruitee.com",
     "apply.workable.com",
     "workable.com",
