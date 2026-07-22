@@ -1,4 +1,8 @@
-# M4 — Extraction & scoring · STATUS: ✅ COMPLETE (merged PRs #3–#9, `fb9d0a0`)
+# M4 — Extraction & scoring · STATUS: ✅ COMPLETE (merged PRs #3–#13, `45dee7f`)
+
+> Core M4 landed in PRs #3–#9 (`fb9d0a0`). Scoring/extraction quality then continued in
+> PRs #10–#13 — recorded below under "Scoring-quality follow-ups." M5 (Hardening) has not
+> started: observability, rate limits, export/delete and load testing are all untouched.
 
 **What shipped:** M3 delivered the pipeline; M4 is where it was **pointed at the real internet and
 made to survive it**. Everything below was found by running
@@ -14,7 +18,8 @@ pipeline had only ever executed against recorded fixtures.
 - **Execution stays inline** (FastAPI `BackgroundTask` + `tenant_session`); still no Redis / Arq /
   worker / always-on host. `RUN_LIVE_SMOKE=1` and `PIPELINE_MODE=record` remain the "prove the
   product" gates — see `docs/RUNNING-LIVE.md`.
-- **CI:** green on every one of the seven merges. **356 tests passing**, ruff + mypy `--strict` clean.
+- **CI:** green on every merge. **388 tests passing** (356 at core-M4 close, +32 from the
+  scoring-quality follow-ups), ruff + mypy `--strict` clean.
 
 ## What live running exposed
 
@@ -62,6 +67,24 @@ once more was built on top. Five issues, all closed, plus a sixth the live runs 
    and carries a seniority guard. Measured `pg_trgm`: "Data Scientist" vs "Senior Data Scientist"
    matches at 0.71 — the spec's threshold alone would have merged two distinct openings.
 
+## Scoring-quality follow-ups (PRs #10–#13)
+
+After the pre-M5 audit, running the pipeline over a wider live corpus (4 → 54 postings) exposed
+that scoring was systematically *understating* matches. Four PRs fixed it end to end:
+
+| PR | Change | Why it mattered |
+|---|---|---|
+| #10 | Ground the dedup 0.92 threshold in recorded embeddings; record M4 status; add `just db-reset` | The threshold had never been checked against a real embedding; a code comment claimed a seniority pair "embeds near-identically" when the recorded pair sits at 0.68 |
+| #11 | Score skills by **embedding similarity**, not string equality | A candidate with PyTorch scored **zero** against "Machine Learning"; every posting collapsed onto Python+SQL and tripped the low-overlap red flag |
+| #12 | Extract **atomic skill names**, not requirement prose; match must-haves as skills | 11% of extracted "skills" were sentences that embed nowhere near a skill token — the same understatement, one stage upstream and immune to any threshold |
+| #13 | Stop applying the skill-token guard to `nice_to_have` | That field is display-only (never embedded/scored); the guard was discarding readable prose the reader would otherwise see |
+
+Two bugs were caught in review and fixed before merge, both invisible to the test suite because
+`RecordedOpenAIClient` masks them: an **empty `must_haves`** list (the default for a new user) would
+send an empty input to the live embeddings API and kill the run; and a provenance guard (`vec_model`)
+was added so a recorded/test run's pseudo-vectors can't poison the global `skills_taxonomy` cache that
+live scoring reads. See `docs/SKILL-MATCHING.md` for the threshold derivation.
+
 ## Deferred to the automation milestone (documented, not built)
 
 Weekly per-user scheduler (staggered) · Arq worker + Upstash Redis + always-on host (hosting decision
@@ -84,3 +107,18 @@ feedback-signal weight nudging.
   mode writes by key and does not ask.
 - Carried from M3: the visual-harness clock pin reaches the browser but not SSR, and favicon `<img>`s
   render as alt-text in visual baselines. Both cosmetic, both tolerated.
+
+### Open, from the PR #10–#13 reviews (none blocking)
+
+- **`just db-bootstrap` fails from inside a git worktree.** It uses `docker compose exec`, which
+  scopes the project by directory name, so from a worktree it can't see the running `postgres`
+  container. The recipe was written for per-worktree DBs — exactly the case that breaks. Workaround:
+  `docker exec specula-postgres-1 …` directly.
+- **Must-haves bypass the taxonomy alias map.** `required_skills` resolve through `_canonicalize`
+  before embedding; must-haves are only casefolded. Given an alias row the two sides embed as near
+  neighbours rather than at exactly 1.0 — survives the threshold in practice, worth unifying.
+- **`must_have_similarity`'s derivation isn't in `SKILL-MATCHING.md`** alongside the `0.55` table;
+  it lives only in a config comment.
+- **The 54-posting live corpus figures aren't reproducible from committed artifacts** — no fixture
+  encodes them, and `nice_to_have`/skill-shape claims came from a manual live run. A debug log of
+  guard-dropped entries would make it continuously verifiable.
