@@ -11,6 +11,10 @@ const PATHS: Record<IconName, string> = {
     "M8 8.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM3 14c0-2.5 2.2-4 5-4s5 1.5 5 4",
   targeting:
     "M8 14A6 6 0 108 2a6 6 0 000 12zM8 11a3 3 0 100-6 3 3 0 000 6zM8 8h0.01",
+  // Reused glyphs as placeholder-free stand-ins; final icons are a DASH/DATA polish detail.
+  dashboard: "M2 14V2M2 14h12M5 11l3-4 2 2 3-5",
+  settings:
+    "M8 14A6 6 0 108 2a6 6 0 000 12zM8 11a3 3 0 100-6 3 3 0 000 6zM8 8h0.01",
 };
 
 export function Icon({ name }: { name: IconName }) {

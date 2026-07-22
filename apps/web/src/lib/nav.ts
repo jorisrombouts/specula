@@ -5,7 +5,9 @@ export type IconName =
   | "insights"
   | "profiles"
   | "targeting"
-  | "candidate";
+  | "candidate"
+  | "dashboard"
+  | "settings";
 
 export type NavItem = {
   id: string;
@@ -33,6 +35,12 @@ export const NAV: NavEntry[] = [
   },
   { section: "Intelligence" },
   { id: "insights", label: "Insights", href: "/insights", icon: "insights" },
+  {
+    id: "dashboard",
+    label: "Dashboard",
+    href: "/dashboard",
+    icon: "dashboard",
+  },
   { section: "Configure" },
   {
     id: "profiles",
@@ -46,6 +54,7 @@ export const NAV: NavEntry[] = [
     href: "/targeting",
     icon: "targeting",
   },
+  { id: "settings", label: "Settings", href: "/settings", icon: "settings" },
 ];
 
 /** A nav item is active when the current pathname equals its href or is nested under it. */
