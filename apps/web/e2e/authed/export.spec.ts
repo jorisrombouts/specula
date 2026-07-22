@@ -5,22 +5,12 @@ import { test, expect } from "@playwright/test";
 //
 // Targets the DATA lane's account export (/settings → "Export my data" downloads an
 // ExportBundle JSON: candidate, targeting, companies, postings, scores, lenses, runs,
-// llmCosts — skills_taxonomy is global and excluded). LOAD merges LAST and rebases onto
-// the integrated main; until DATA is on this branch there is no (app)/settings page and
-// GET /api/v1/account is a stub, so we SKIP rather than assert against it.
+// llmCosts — skills_taxonomy is global and excluded).
 //
-// After rebasing onto the integrated main: flip PENDING → false and tighten the
-// selectors against the real DATA DOM. See .lane-status.md.
-const PENDING = true;
+// The export control is a plain `<a href="/api/account/export" download>` (role
+// "link", not "button" — see settings-view.tsx), not a JS-driven button.
 
 test.describe("Data export", () => {
-  test.beforeEach(() => {
-    test.skip(
-      PENDING,
-      "Pending DATA lane merge — /settings export not on this branch yet",
-    );
-  });
-
   test("downloads the tenant's export bundle as JSON", async ({ page }) => {
     await page.addInitScript(() => {
       try {
@@ -32,13 +22,14 @@ test.describe("Data export", () => {
       page.getByRole("heading", { name: "Settings", level: 1 }),
     ).toBeVisible();
 
-    const exportButton = page.getByRole("button", { name: /export/i });
-    await expect(exportButton).toBeEnabled();
+    const exportLink = page.getByRole("link", { name: /export/i });
+    await expect(exportLink).toBeVisible();
 
-    // The click triggers a file download (a browser save, not a navigation).
+    // The click triggers a file download (a browser save, not a navigation) —
+    // the anchor's `download` attribute intercepts the navigation.
     const [download] = await Promise.all([
       page.waitForEvent("download"),
-      exportButton.click(),
+      exportLink.click(),
     ]);
 
     // The bundle is JSON. Assert on the download, then that it parses into the
