@@ -56,7 +56,13 @@ async def extract_posting(session: AsyncSession, posting: Posting, deps: Pipelin
     posting.seniority = result.seniority
     posting.education = result.education
     posting.required_skills = to_skill_tokens(result.required_skills)
-    posting.nice_to_have = to_skill_tokens(result.nice_to_have)
+    # NOT to_skill_tokens: `nice_to_have` is display-only (services/jobs.py renders it and
+    # nothing else reads it — never embedded, scored, aggregated or deduped). The reason
+    # required_skills drops prose is that a sentence can never match a candidate skill and
+    # so only distorts the score; with nothing comparing this field, dropping would lose
+    # real information — "Familiarity with ML tooling such as MLflow, ZenML, or Metaflow"
+    # names three tools, and showing nothing is worse than showing that sentence.
+    posting.nice_to_have = [cleaned for item in result.nice_to_have if (cleaned := item.strip())]
     posting.visa = result.visa
     posting.languages = result.languages
     posting.contract = result.contract

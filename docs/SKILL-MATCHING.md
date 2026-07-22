@@ -112,6 +112,19 @@ sentence, with `to_skill_tokens` as the deterministic guard at the write site (t
 three-layer shape as country normalization). Re-extracting the affected postings decomposed
 all 11 without the guard needing to drop anything, taking sentence-shaped skills to 0%.
 
+### `nice_to_have` is asked, not enforced
+
+The prompt requests atomic names for **both** skill fields, but the guard runs on
+`required_skills` only. `nice_to_have` is display-only — `services/jobs.py` renders it and
+nothing else reads it; it is never embedded, scored, aggregated or deduped. The guard exists
+because a sentence distorts a comparison, and nothing here compares. Dropping would only
+lose information: "Familiarity with ML tooling such as MLflow, ZenML, or Metaflow" names
+three real tools, and showing the reader nothing is worse than showing them that sentence.
+
+Prompt as aspiration, guard as enforcement — and enforcement only where non-compliance
+actually costs something. If `nice_to_have` ever starts feeding a comparison, it needs the
+guard back.
+
 ## Open: recalibration
 
 The read model's 45-point flag and the 0.6/0.4 overlap-vs-cosine blend in
