@@ -4,16 +4,14 @@ import { NAV, isActive, type NavItem } from "@/lib/nav";
 const items = NAV.filter((e): e is NavItem => "id" in e);
 
 describe("NAV model", () => {
-  it("has the eight sidebar nav items in order", () => {
+  it("has the six sidebar nav items in order", () => {
     expect(items.map((i) => i.id)).toEqual([
       "jobs",
       "approvals",
       "companies",
       "insights",
-      "dashboard",
       "profiles",
       "targeting",
-      "settings",
     ]);
   });
 
@@ -31,20 +29,9 @@ describe("NAV model", () => {
       "/approvals",
       "/companies",
       "/insights",
-      "/dashboard",
       "/profiles",
       "/targeting",
-      "/settings",
     ]);
-  });
-});
-
-describe("nav M5 entries", () => {
-  it("has dashboard and settings", () => {
-    const ids = items.map((i) => i.id);
-    expect(ids).toContain("dashboard");
-    expect(ids).toContain("settings");
-    expect(items.find((i) => i.id === "settings")?.href).toBe("/settings");
   });
 });
 
