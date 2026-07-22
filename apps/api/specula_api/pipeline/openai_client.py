@@ -117,16 +117,45 @@ class FixtureMissing(Exception):
 _ResultT = TypeVar("_ResultT", bound=BaseModel)
 
 
+@dataclass(frozen=True)
+class RealUsage:
+    """Actual OpenAI-reported token counts for the most recent call, captured from the raw
+    SDK response's `.usage` (see `OpenAIResponsesClient.last_usage`). Read by
+    `MeteringOpenAIClient` in place of `estimate_tokens` whenever it is available."""
+
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    embed_tokens: int = 0
+
+
 class OpenAIResponsesClient:
     """Live OpenAI implementation backed by `AsyncOpenAI`."""
 
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
         self._client = AsyncOpenAI(api_key=settings.openai_api_key)
+        # Side channel: real `.usage` from the most recently completed public call, for
+        # MeteringOpenAIClient to read instead of estimating (see `_note_usage`). Reset to
+        # None at the start of every public method; None means no real usage was captured
+        # (e.g. a response came back with `.usage` missing).
+        self.last_usage: RealUsage | None = None
+
+    def _note_usage(
+        self, *, prompt_tokens: int = 0, completion_tokens: int = 0, embed_tokens: int = 0
+    ) -> None:
+        """Accumulate real usage into `last_usage`. `discover_sources` calls this once per
+        query — across several `_search` calls — so later calls add rather than overwrite."""
+        base = self.last_usage or RealUsage()
+        self.last_usage = RealUsage(
+            prompt_tokens=base.prompt_tokens + prompt_tokens,
+            completion_tokens=base.completion_tokens + completion_tokens,
+            embed_tokens=base.embed_tokens + embed_tokens,
+        )
 
     async def discover_sources(
         self, queries: Sequence[str], *, allowed_domains: Sequence[str] | None = None
     ) -> list[Source]:
+        self.last_usage = None
         sources: list[Source] = []
         seen: set[str] = set()
         for query in queries:
@@ -151,6 +180,11 @@ class OpenAIResponsesClient:
             tools=[tool],
             include=["web_search_call.action.sources"],
         )
+        if response.usage is not None:
+            self._note_usage(
+                prompt_tokens=response.usage.input_tokens,
+                completion_tokens=response.usage.output_tokens,
+            )
         return _sources_from_response(response)
 
     async def enrich_company(
@@ -192,15 +226,18 @@ class OpenAIResponsesClient:
 
     async def embed(self, texts: Sequence[str]) -> list[list[float]]:
         # verified by live smoke
+        self.last_usage = None
         response = await self._client.embeddings.create(
             model=self._settings.openai_embed_model, input=list(texts)
         )
+        self._note_usage(embed_tokens=response.usage.prompt_tokens)
         return [list(item.embedding) for item in response.data]
 
     async def rationale(
         self, *, factors: dict[str, int], overlap: tuple[int, int], red_flag: str | None
     ) -> str:
         # verified by live smoke
+        self.last_usage = None
         user = (
             f"Factors: {json.dumps(factors, sort_keys=True)}\n"
             f"Skill overlap: {overlap[0]}/{overlap[1]}\n"
@@ -219,6 +256,11 @@ class OpenAIResponsesClient:
                 {"role": "user", "content": user},
             ],
         )
+        if response.usage is not None:
+            self._note_usage(
+                prompt_tokens=response.usage.prompt_tokens,
+                completion_tokens=response.usage.completion_tokens,
+            )
         return response.choices[0].message.content or ""
 
     async def approval_whys(self, descriptions: Sequence[str]) -> list[str]:
@@ -227,6 +269,7 @@ class OpenAIResponsesClient:
         Discovery stages 20+ candidates per run; one call each would dominate the run's cost
         for a single sentence apiece.
         """
+        self.last_usage = None
         if not descriptions:
             return []
         numbered = "\n".join(f"{i + 1}. {d}" for i, d in enumerate(descriptions))
@@ -249,6 +292,7 @@ class OpenAIResponsesClient:
         self, *, model: str, result_type: type[_ResultT], system: str, user: str
     ) -> _ResultT:
         # verified by live smoke
+        self.last_usage = None
         completion = await self._client.chat.completions.parse(
             model=model,
             messages=[
@@ -257,6 +301,11 @@ class OpenAIResponsesClient:
             ],
             response_format=result_type,
         )
+        if completion.usage is not None:
+            self._note_usage(
+                prompt_tokens=completion.usage.prompt_tokens,
+                completion_tokens=completion.usage.completion_tokens,
+            )
         parsed = completion.choices[0].message.parsed
         if parsed is None:
             raise RuntimeError(f"OpenAI returned no structured output for {result_type.__name__}")
@@ -391,6 +440,15 @@ class RecordingOpenAIClient:
         self._live = live
         self._dir = Path(fixtures_dir) / "openai"
 
+    @property
+    def last_usage(self) -> RealUsage | None:
+        """Proxies the wrapped live client's real `.usage` side channel (see
+        `OpenAIResponsesClient.last_usage`) so `MeteringOpenAIClient` sees actual token counts
+        in `pipeline_mode="record"` too, not just plain live mode."""
+        if isinstance(self._live, OpenAIResponsesClient):
+            return self._live.last_usage
+        return None
+
     async def discover_sources(
         self, queries: Sequence[str], *, allowed_domains: Sequence[str] | None = None
     ) -> list[Source]:
@@ -448,11 +506,13 @@ class RecordingOpenAIClient:
 # One CostRecord = one OpenAI call; services/run.py turns records into `llm_costs` rows (OBS→DASH).
 # ---------------------------------------------------------------------------
 
-# The OpenAI seam returns PARSED domain objects, so a live response's real `.usage` is not
-# available at this layer — and CI/recorded mode never calls the API, so there is no `.usage`
-# to capture there at all. Tokens are therefore ESTIMATED from the call's text at OpenAI's
-# published ~4-chars-per-token guide. Deterministic (same text → same count), which is what
-# lets a recorded run assert an exact cost and lets DASH's display agree with what we stored.
+# The OpenAI seam returns PARSED domain objects, so a live response's real `.usage` is not part
+# of any method's return value — `OpenAIResponsesClient` instead stashes it on the side-channel
+# `last_usage` attribute (see its docstring), which `MeteringOpenAIClient._real_usage` reads.
+# CI/recorded mode never calls the API, so there is no `.usage` to capture there at all; tokens
+# are then ESTIMATED from the call's text at OpenAI's published ~4-chars-per-token guide.
+# Deterministic (same text → same count), which is what lets a recorded run assert an exact cost
+# and lets DASH's display agree with what we stored.
 _CHARS_PER_TOKEN = 4
 
 
@@ -541,6 +601,15 @@ class MeteringOpenAIClient:
         self._sink = sink
         self._settings = settings
 
+    def _real_usage(self) -> RealUsage | None:
+        """Real OpenAI `.usage` captured by the wrapped client for the call just delegated, if
+        any (live mode, via `OpenAIResponsesClient`/`RecordingOpenAIClient`). None in
+        recorded/replay mode — there is no `.usage` on a fixture — so `_record` falls back to
+        the `estimate_tokens` counts its callers already computed."""
+        if isinstance(self.inner, OpenAIResponsesClient | RecordingOpenAIClient):
+            return self.inner.last_usage
+        return None
+
     def _record(
         self,
         stage: str,
@@ -550,6 +619,13 @@ class MeteringOpenAIClient:
         completion_tokens: int = 0,
         embed_tokens: int = 0,
     ) -> None:
+        real = self._real_usage()
+        if real is not None:
+            prompt_tokens, completion_tokens, embed_tokens = (
+                real.prompt_tokens,
+                real.completion_tokens,
+                real.embed_tokens,
+            )
         self._sink.add(
             CostRecord(
                 stage=stage,
