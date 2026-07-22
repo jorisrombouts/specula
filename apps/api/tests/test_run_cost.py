@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from test_db import requires_db
 
 from specula_api.config import OPENAI_PRICING, Settings
-from specula_api.db.models import Approval, CandidateProfile, Lens, LlmCost, Targeting
+from specula_api.db.models import Approval, CandidateProfile, Company, Lens, LlmCost, Targeting
 from specula_api.observability import ContextFilter, JsonFormatter, configure_logging
 from specula_api.pipeline.deps import PipelineDeps
 from specula_api.pipeline.discovery import build_seed_queries
@@ -183,6 +183,25 @@ async def test_ingest_writes_llm_cost_rows_with_stage_model_and_pricing_cost(
     embed_rows = [r for r in ingest_rows if r.stage == "embed"]
     assert all(r.model == settings.openai_embed_model for r in embed_rows)
     assert all(r.embed_tokens > 0 and r.prompt_tokens == 0 for r in embed_rows)
+
+
+@requires_db
+async def test_ingest_skips_opted_out_company(db_session: AsyncSession) -> None:
+    user = await make_user(db_session)
+    await set_tenant(db_session, user.id)
+    company = Company(user_id=user.id, name="Acme", domain="acme.com", opt_out=True)
+    db_session.add(company)
+    await db_session.flush()
+
+    await ingest_company(
+        db_session,
+        user.id,
+        company.id,
+        _metered_deps(_IngestOpenAI({}), CostSink(run_budget_usd=1000.0, daily_budget_usd=1000.0)),
+    )
+
+    assert [r for r in await _rows(db_session, user.id) if r.company_id == company.id] == []
+    assert company.logo_url is None
 
 
 @requires_db

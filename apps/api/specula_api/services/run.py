@@ -195,7 +195,7 @@ async def ingest_company(
     OpenAI spend as `llm_costs` rows keyed to the company (no Run exists for an ingest), and
     aborts cleanly on a budget breach — costs already accrued are still persisted (finally)."""
     company = await session.get(Company, company_id)
-    if company is None or company.user_id != user_id:
+    if company is None or company.user_id != user_id or company.opt_out:
         return
 
     await _seed_daily_baseline(session, user_id, deps)
