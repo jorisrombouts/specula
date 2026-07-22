@@ -10,8 +10,11 @@ from xml.etree.ElementTree import Element
 from pydantic import BaseModel
 from selectolax.parser import HTMLParser
 
+from specula_api.observability import get_logger
 from specula_api.pipeline.content_hash import content_hash
 from specula_api.pipeline.http import Disallowed, Fetcher
+
+_log = get_logger("pipeline.source")
 
 # Hosts discovery's web-search is restricted to. SmartRecruiters is deliberately NOT here:
 # `api.smartrecruiters.com/robots.txt` allows only LinkedInBot on `/v1/companies/` and
@@ -115,6 +118,7 @@ def detect_ats(*, domain: str | None, careers_url: str | None, ats_hint: str | N
 
 def resolve_adapter(company: CompanyLike) -> SourceAdapter:
     ats = detect_ats(domain=company.domain, careers_url=company.careers_url, ats_hint=company.ats)
+    _log.info("pipeline.stage", extra={"stage": "source", "ats": ats or "generic"})
     if ats == "greenhouse":
         return GreenhouseAdapter()
     if ats == "lever":

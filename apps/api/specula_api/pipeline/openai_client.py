@@ -5,7 +5,9 @@ import json
 import random
 import re
 from collections.abc import Sequence
+from dataclasses import dataclass, field
 from datetime import date
+from decimal import Decimal
 from pathlib import Path
 from typing import Protocol, TypeVar
 
@@ -14,7 +16,7 @@ from openai.types.responses import Response, ResponseFunctionWebSearch, WebSearc
 from openai.types.responses.response_function_web_search import ActionSearch
 from pydantic import BaseModel, Field, TypeAdapter
 
-from specula_api.config import Settings
+from specula_api.config import OPENAI_PRICING, Settings
 
 _EMBED_DIM = 1536
 
@@ -115,16 +117,45 @@ class FixtureMissing(Exception):
 _ResultT = TypeVar("_ResultT", bound=BaseModel)
 
 
+@dataclass(frozen=True)
+class RealUsage:
+    """Actual OpenAI-reported token counts for the most recent call, captured from the raw
+    SDK response's `.usage` (see `OpenAIResponsesClient.last_usage`). Read by
+    `MeteringOpenAIClient` in place of `estimate_tokens` whenever it is available."""
+
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    embed_tokens: int = 0
+
+
 class OpenAIResponsesClient:
     """Live OpenAI implementation backed by `AsyncOpenAI`."""
 
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
         self._client = AsyncOpenAI(api_key=settings.openai_api_key)
+        # Side channel: real `.usage` from the most recently completed public call, for
+        # MeteringOpenAIClient to read instead of estimating (see `_note_usage`). Reset to
+        # None at the start of every public method; None means no real usage was captured
+        # (e.g. a response came back with `.usage` missing).
+        self.last_usage: RealUsage | None = None
+
+    def _note_usage(
+        self, *, prompt_tokens: int = 0, completion_tokens: int = 0, embed_tokens: int = 0
+    ) -> None:
+        """Accumulate real usage into `last_usage`. `discover_sources` calls this once per
+        query — across several `_search` calls — so later calls add rather than overwrite."""
+        base = self.last_usage or RealUsage()
+        self.last_usage = RealUsage(
+            prompt_tokens=base.prompt_tokens + prompt_tokens,
+            completion_tokens=base.completion_tokens + completion_tokens,
+            embed_tokens=base.embed_tokens + embed_tokens,
+        )
 
     async def discover_sources(
         self, queries: Sequence[str], *, allowed_domains: Sequence[str] | None = None
     ) -> list[Source]:
+        self.last_usage = None
         sources: list[Source] = []
         seen: set[str] = set()
         for query in queries:
@@ -149,6 +180,11 @@ class OpenAIResponsesClient:
             tools=[tool],
             include=["web_search_call.action.sources"],
         )
+        if response.usage is not None:
+            self._note_usage(
+                prompt_tokens=response.usage.input_tokens,
+                completion_tokens=response.usage.output_tokens,
+            )
         return _sources_from_response(response)
 
     async def enrich_company(
@@ -190,15 +226,18 @@ class OpenAIResponsesClient:
 
     async def embed(self, texts: Sequence[str]) -> list[list[float]]:
         # verified by live smoke
+        self.last_usage = None
         response = await self._client.embeddings.create(
             model=self._settings.openai_embed_model, input=list(texts)
         )
+        self._note_usage(embed_tokens=response.usage.prompt_tokens)
         return [list(item.embedding) for item in response.data]
 
     async def rationale(
         self, *, factors: dict[str, int], overlap: tuple[int, int], red_flag: str | None
     ) -> str:
         # verified by live smoke
+        self.last_usage = None
         user = (
             f"Factors: {json.dumps(factors, sort_keys=True)}\n"
             f"Skill overlap: {overlap[0]}/{overlap[1]}\n"
@@ -217,6 +256,11 @@ class OpenAIResponsesClient:
                 {"role": "user", "content": user},
             ],
         )
+        if response.usage is not None:
+            self._note_usage(
+                prompt_tokens=response.usage.prompt_tokens,
+                completion_tokens=response.usage.completion_tokens,
+            )
         return response.choices[0].message.content or ""
 
     async def approval_whys(self, descriptions: Sequence[str]) -> list[str]:
@@ -225,6 +269,7 @@ class OpenAIResponsesClient:
         Discovery stages 20+ candidates per run; one call each would dominate the run's cost
         for a single sentence apiece.
         """
+        self.last_usage = None
         if not descriptions:
             return []
         numbered = "\n".join(f"{i + 1}. {d}" for i, d in enumerate(descriptions))
@@ -247,6 +292,7 @@ class OpenAIResponsesClient:
         self, *, model: str, result_type: type[_ResultT], system: str, user: str
     ) -> _ResultT:
         # verified by live smoke
+        self.last_usage = None
         completion = await self._client.chat.completions.parse(
             model=model,
             messages=[
@@ -255,6 +301,11 @@ class OpenAIResponsesClient:
             ],
             response_format=result_type,
         )
+        if completion.usage is not None:
+            self._note_usage(
+                prompt_tokens=completion.usage.prompt_tokens,
+                completion_tokens=completion.usage.completion_tokens,
+            )
         parsed = completion.choices[0].message.parsed
         if parsed is None:
             raise RuntimeError(f"OpenAI returned no structured output for {result_type.__name__}")
@@ -389,6 +440,15 @@ class RecordingOpenAIClient:
         self._live = live
         self._dir = Path(fixtures_dir) / "openai"
 
+    @property
+    def last_usage(self) -> RealUsage | None:
+        """Proxies the wrapped live client's real `.usage` side channel (see
+        `OpenAIResponsesClient.last_usage`) so `MeteringOpenAIClient` sees actual token counts
+        in `pipeline_mode="record"` too, not just plain live mode."""
+        if isinstance(self._live, OpenAIResponsesClient):
+            return self._live.last_usage
+        return None
+
     async def discover_sources(
         self, queries: Sequence[str], *, allowed_domains: Sequence[str] | None = None
     ) -> list[Source]:
@@ -439,3 +499,218 @@ class RecordingOpenAIClient:
         path = self._dir / kind / f"{key}.json"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(data, indent=2) + "\n")
+
+
+# ---------------------------------------------------------------------------
+# Cost metering — wraps any OpenAIClient, sizes each call and reports its USD cost to a sink.
+# One CostRecord = one OpenAI call; services/run.py turns records into `llm_costs` rows (OBS→DASH).
+# ---------------------------------------------------------------------------
+
+# The OpenAI seam returns PARSED domain objects, so a live response's real `.usage` is not part
+# of any method's return value — `OpenAIResponsesClient` instead stashes it on the side-channel
+# `last_usage` attribute (see its docstring), which `MeteringOpenAIClient._real_usage` reads.
+# CI/recorded mode never calls the API, so there is no `.usage` to capture there at all; tokens
+# are then ESTIMATED from the call's text at OpenAI's published ~4-chars-per-token guide.
+# Deterministic (same text → same count), which is what lets a recorded run assert an exact cost
+# and lets DASH's display agree with what we stored.
+_CHARS_PER_TOKEN = 4
+
+
+def estimate_tokens(*texts: str) -> int:
+    """Rough token count for the given text(s), ~4 chars/token, rounded up. 0 for no text."""
+    chars = sum(len(text) for text in texts)
+    if chars == 0:
+        return 0
+    return max(1, -(-chars // _CHARS_PER_TOKEN))
+
+
+def compute_cost_usd(
+    model: str, *, prompt_tokens: int = 0, completion_tokens: int = 0, embed_tokens: int = 0
+) -> Decimal:
+    """USD cost of one call from `config.OPENAI_PRICING` (USD per 1M tokens), rounded to the
+    `llm_costs.cost_usd` Numeric(12, 6) scale. Unknown models bill as free (never crash a run)."""
+    price = OPENAI_PRICING.get(model, {"prompt": 0.0, "completion": 0.0, "embed": 0.0})
+    usd = (
+        prompt_tokens * price["prompt"]
+        + completion_tokens * price["completion"]
+        + embed_tokens * price["embed"]
+    ) / 1_000_000
+    return Decimal(str(usd)).quantize(Decimal("0.000001"))
+
+
+@dataclass(frozen=True)
+class CostRecord:
+    """One metered OpenAI call. `stage` ∈ {discovery, extract, embed, score, rationale}."""
+
+    stage: str
+    model: str
+    prompt_tokens: int
+    completion_tokens: int
+    embed_tokens: int
+    cost_usd: Decimal
+
+
+class BudgetExceeded(BaseException):
+    """A run/ingest's accumulated OpenAI spend crossed a configured ceiling. Derives from
+    BaseException, NOT Exception, on purpose: the pipeline's broad `except Exception` guards
+    (discovery.py) must not swallow this abort. services/run.py catches it explicitly, persists
+    the costs accrued so far, and marks the run errored."""
+
+    def __init__(self, scope: str, spent: Decimal, budget: float) -> None:
+        super().__init__(f"OpenAI {scope} budget exceeded: ${spent} > ${budget}")
+        self.scope = scope
+        self.spent = spent
+        self.budget = budget
+
+
+@dataclass
+class CostSink:
+    """Accumulates a run/ingest's `CostRecord`s and trips the budget guard.
+
+    In-memory only — services/run.py reads `records` afterward to write `llm_costs` rows and the
+    `runs.cost_usd` rollup. `daily_baseline` is the user's spend earlier today (seeded from the
+    ledger before the pipeline starts) so the per-day ceiling spans runs, not just this one."""
+
+    run_budget_usd: float
+    daily_budget_usd: float
+    daily_baseline: Decimal = Decimal("0")
+    records: list[CostRecord] = field(default_factory=list)
+
+    @property
+    def total(self) -> Decimal:
+        return sum((rec.cost_usd for rec in self.records), Decimal("0"))
+
+    def add(self, record: CostRecord) -> None:
+        """Append a record, then enforce the per-run and per-day ceilings (raises after the
+        record is stored, so the call that tipped the balance is still accounted for)."""
+        self.records.append(record)
+        total = self.total
+        if total > Decimal(str(self.run_budget_usd)):
+            raise BudgetExceeded("run", total, self.run_budget_usd)
+        if self.daily_baseline + total > Decimal(str(self.daily_budget_usd)):
+            raise BudgetExceeded("daily", self.daily_baseline + total, self.daily_budget_usd)
+
+
+class MeteringOpenAIClient:
+    """Wraps an `OpenAIClient`, mirroring the `RecordingOpenAIClient` decorator shape: delegate
+    first, then size the call and report its cost to the sink. The stage is derived from the
+    method; the model is resolved from `settings` (the same value the live client would use)."""
+
+    def __init__(self, inner: OpenAIClient, sink: CostSink, settings: Settings) -> None:
+        self.inner = inner  # the wrapped client (public so wiring can be introspected)
+        self._sink = sink
+        self._settings = settings
+
+    def _real_usage(self) -> RealUsage | None:
+        """Real OpenAI `.usage` captured by the wrapped client for the call just delegated, if
+        any (live mode, via `OpenAIResponsesClient`/`RecordingOpenAIClient`). None in
+        recorded/replay mode — there is no `.usage` on a fixture — so `_record` falls back to
+        the `estimate_tokens` counts its callers already computed."""
+        if isinstance(self.inner, OpenAIResponsesClient | RecordingOpenAIClient):
+            return self.inner.last_usage
+        return None
+
+    def _record(
+        self,
+        stage: str,
+        model: str,
+        *,
+        prompt_tokens: int = 0,
+        completion_tokens: int = 0,
+        embed_tokens: int = 0,
+    ) -> None:
+        real = self._real_usage()
+        if real is not None:
+            prompt_tokens, completion_tokens, embed_tokens = (
+                real.prompt_tokens,
+                real.completion_tokens,
+                real.embed_tokens,
+            )
+        self._sink.add(
+            CostRecord(
+                stage=stage,
+                model=model,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                embed_tokens=embed_tokens,
+                cost_usd=compute_cost_usd(
+                    model,
+                    prompt_tokens=prompt_tokens,
+                    completion_tokens=completion_tokens,
+                    embed_tokens=embed_tokens,
+                ),
+            )
+        )
+
+    async def discover_sources(
+        self, queries: Sequence[str], *, allowed_domains: Sequence[str] | None = None
+    ) -> list[Source]:
+        result = await self.inner.discover_sources(queries, allowed_domains=allowed_domains)
+        self._record(
+            "discovery",
+            self._settings.openai_search_model,
+            prompt_tokens=estimate_tokens(*queries),
+            completion_tokens=estimate_tokens(*(source.url for source in result)),
+        )
+        return result
+
+    async def enrich_company(
+        self, *, name: str, domain: str | None, page_text: str | None
+    ) -> EnrichResult:
+        result = await self.inner.enrich_company(name=name, domain=domain, page_text=page_text)
+        self._record(
+            "extract",
+            self._settings.openai_extract_model,
+            prompt_tokens=estimate_tokens(name, domain or "", page_text or ""),
+            completion_tokens=estimate_tokens(result.model_dump_json()),
+        )
+        return result
+
+    async def extract_posting(
+        self, *, page_text: str, company_name: str | None = None
+    ) -> ExtractionResult:
+        result = await self.inner.extract_posting(page_text=page_text, company_name=company_name)
+        self._record(
+            "extract",
+            self._settings.openai_extract_model,
+            prompt_tokens=estimate_tokens(page_text, company_name or ""),
+            completion_tokens=estimate_tokens(result.model_dump_json()),
+        )
+        return result
+
+    async def embed(self, texts: Sequence[str]) -> list[list[float]]:
+        result = await self.inner.embed(texts)
+        text_list = list(texts)
+        if text_list:
+            self._record(
+                "embed",
+                self._settings.openai_embed_model,
+                embed_tokens=estimate_tokens(*text_list),
+            )
+        return result
+
+    async def rationale(
+        self, *, factors: dict[str, int], overlap: tuple[int, int], red_flag: str | None
+    ) -> str:
+        result = await self.inner.rationale(factors=factors, overlap=overlap, red_flag=red_flag)
+        self._record(
+            "rationale",
+            self._settings.openai_rationale_model,
+            prompt_tokens=estimate_tokens(json.dumps(factors, sort_keys=True), red_flag or ""),
+            completion_tokens=estimate_tokens(result),
+        )
+        return result
+
+    async def approval_whys(self, descriptions: Sequence[str]) -> list[str]:
+        result = await self.inner.approval_whys(descriptions)
+        if descriptions:
+            self._record(
+                "discovery",
+                self._settings.openai_rationale_model,
+                prompt_tokens=estimate_tokens(*descriptions),
+                completion_tokens=estimate_tokens(*result),
+            )
+        return result
+
+    async def aclose(self) -> None:
+        await self.inner.aclose()

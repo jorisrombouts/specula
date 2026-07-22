@@ -19,6 +19,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from specula_api.config import settings
 from specula_api.db.models import Posting
+from specula_api.observability import get_logger
+
+_log = get_logger("pipeline.dedup")
 
 _NON_WORD = re.compile(r"[^a-z0-9]+")
 
@@ -107,6 +110,7 @@ async def dedup_company(session: AsyncSession, user_id: UUID, company_id: UUID) 
     Reruns reuse an existing group's id when any member already carries one, so group identity
     is stable across ingests.
     """
+    _log.info("pipeline.stage", extra={"stage": "dedup", "company_id": str(company_id)})
     postings = list(
         await session.scalars(
             select(Posting).where(

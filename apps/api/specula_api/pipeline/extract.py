@@ -15,8 +15,11 @@ posting is never dropped.
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from specula_api.db.models import Company, Posting
+from specula_api.observability import get_logger
 from specula_api.pipeline.deps import PipelineDeps
 from specula_api.pipeline.util import html_to_text, to_country_code, to_skill_tokens
+
+_log = get_logger("pipeline.extract")
 
 # A real posting page yields well over this much readable text; anything less is a shell
 # (JS-rendered board, interstitial, error page) with nothing worth extracting.
@@ -27,6 +30,7 @@ async def extract_posting(session: AsyncSession, posting: Posting, deps: Pipelin
     """Re-fetch the posting page (no stored HTML), LLM-extract structured fields onto the
     Posting. Salary only if explicitly stated (never invented). Low extraction_confidence
     still stored (surfaced-not-trusted, excluded from Insights) — don't drop the posting."""
+    _log.info("pipeline.stage", extra={"stage": "extract", "posting_id": str(posting.id)})
     doc = await deps.fetcher.get(posting.source_url)
     # Guard on the REDUCED text, not the raw response. A JS-rendered board (Ashby returns a
     # ~7KB SPA shell with zero readable text) is a 200 with plenty of bytes but nothing to
