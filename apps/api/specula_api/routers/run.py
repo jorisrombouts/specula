@@ -4,16 +4,18 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from specula_api.deps import get_current_user_id, get_session
+from specula_api.ratelimit import RateLimitedRoute, rate_limit_guard
 from specula_api.schemas.run import RunOut
 from specula_api.services.run import create_run, get_run, latest_run, trigger_discovery_run
 
-router = APIRouter(prefix="/runs", tags=["runs"])
+router = APIRouter(prefix="/runs", tags=["runs"], route_class=RateLimitedRoute)
 
 
 @router.post("", status_code=201)
 async def start_run(
     background_tasks: BackgroundTasks,
     user_id: UUID = Depends(get_current_user_id),
+    _: None = Depends(rate_limit_guard),
     session: AsyncSession = Depends(get_session),
 ) -> RunOut:
     run = await create_run(session, user_id)

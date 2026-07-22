@@ -201,7 +201,13 @@ async def test_reject_and_snooze_persist_without_creating_a_company(
 
 
 @requires_db
-async def test_approve_is_idempotent_on_duplicate_domain(migrated_db: None) -> None:
+async def test_approve_is_idempotent_on_duplicate_domain(
+    migrated_db: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Both approves fire back-to-back for one user; the NET rate-limit gate (default 60s
+    # cooldown) would 429 the second, so drop the cooldown — this test is about idempotency,
+    # not throttling (which tests/test_ratelimit.py covers).
+    monkeypatch.setattr(settings, "run_cooldown_s", 0)
     sub, email = _sub()
     user_id = await _seed_user_with_approvals(
         sub,
