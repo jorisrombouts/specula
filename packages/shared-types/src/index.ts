@@ -65,5 +65,28 @@ export interface Run {
   id: string; kind: "scheduled" | "on_demand";
   status: "queued" | "running" | "done" | "error";
   startedAt: string | null; finishedAt: string | null;
-  stats: RunStats; createdAt: string;
+  stats: RunStats; createdAt: string; cost?: RunCost | null;
 }
+
+export interface LlmCost {
+  id: string; runId: string | null; companyId: string | null;
+  stage: string; model: string;
+  promptTokens: number; completionTokens: number; embedTokens: number;
+  costUsd: number; createdAt: string;
+}
+export interface RunCost { costUsd: number; durationMs: number | null }
+export interface CostPoint { date: string; costUsd: number; runs: number }
+export interface CostByStage { stage: string; costUsd: number }
+export interface DashboardSummary {
+  totalCostUsd: number; runCount: number;
+  costByStage: CostByStage[]; costByDay: CostPoint[]; recentRuns: Run[];
+}
+// A data-export blob is a heterogeneous dump; DATA owns the row shapes on both ends,
+// so arrays are intentionally `unknown[]` here (a deliberate type, not a placeholder).
+export interface ExportBundle {
+  exportedAt: string;
+  candidate: unknown; targeting: unknown;
+  companies: unknown[]; postings: unknown[]; scores: unknown[];
+  lenses: unknown[]; runs: unknown[]; llmCosts: LlmCost[];
+}
+export interface RateLimitError { error: "rate_limited"; retryAfterS: number }

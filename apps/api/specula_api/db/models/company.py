@@ -23,5 +23,6 @@ class Company(Base):
     hq_confidence: Mapped[int | None] = mapped_column(Integer, nullable=True)
     comp_estimate: Mapped[str | None] = mapped_column(Text, nullable=True)
     tracking: Mapped[bool] = mapped_column(Boolean, server_default=text("true"))
+    opt_out: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
     status: Mapped[str] = mapped_column(Text, server_default=text("'approved'"))
     added_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
