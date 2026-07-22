@@ -117,8 +117,6 @@ feedback-signal weight nudging.
 - **Must-haves bypass the taxonomy alias map.** `required_skills` resolve through `_canonicalize`
   before embedding; must-haves are only casefolded. Given an alias row the two sides embed as near
   neighbours rather than at exactly 1.0 — survives the threshold in practice, worth unifying.
-- **`must_have_similarity`'s derivation isn't in `SKILL-MATCHING.md`** alongside the `0.55` table;
-  it lives only in a config comment.
 - **The 54-posting live corpus figures aren't reproducible from committed artifacts** — no fixture
   encodes them, and `nice_to_have`/skill-shape claims came from a manual live run. A debug log of
   guard-dropped entries would make it continuously verifiable.

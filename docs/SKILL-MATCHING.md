@@ -99,6 +99,33 @@ On the genuinely crawled postings (`source='greenhouse'`):
 The two unchanged results are correct: that candidate has no Spark, Hadoop, Airflow,
 computer vision or NLP. The fix removes spurious flags without inventing coverage.
 
+## Must-have red flag (`must_have_similarity` = 0.55)
+
+`targeting.must_haves` set the one red flag this stage produces (`services/jobs.py` owns the
+separate low-skill flag). A must-have is a **skill**, matched against the posting's required
+skills by the same embedding comparison as overlap — one register, one threshold. Exact
+string matching previously flagged **53 of 53** postings in the corpus, because prose can
+never appear verbatim in a skills list; the flag both renders in the UI and feeds the
+rationale writer, so a permanently-on false warning was shaping every rationale.
+
+The threshold sits in a measured empty gap. Against the live corpus, the highest false
+positive is `sql` covering `python` at **0.477** (and `gpu programming` at the same), while
+the lowest true match is `python engineering` at **0.617** — nothing falls between, so any
+value in 0.50–0.60 gives zero false clears and zero wrong flags. 0.55 is the midpoint. On the
+corpus the flag went 53/53 → **15/53**, every remaining flag on a posting that genuinely
+lists no Python.
+
+It is kept separate from `skill_match_similarity` (also 0.55 today) because it answers a
+stricter question — "is *this* skill present" rather than "is this requirement covered."
+
+**Deliberately not supported: criteria about the role as a whole** ("Production ML or applied
+LLM work"). Whether a posting satisfies one is an *entailment* question, and cosine measures
+topical similarity. Tried three ways — against skill tokens, the aggregate skills vector, and
+the full title/summary/responsibilities text — every one produced a smooth ramp with no
+separating boundary (against profile text, postings requiring Python scored 0.106–0.207 vs
+0.090–0.182 for those that don't: fully overlapping). A threshold there would be fitted to
+noise, so such criteria belong in `targeting.preferences`, which does not drive scoring.
+
 ## Upstream dependency: skill shape
 
 Matching can only be as good as extraction. Measured on the live corpus, 11% of extracted
