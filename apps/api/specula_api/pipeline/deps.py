@@ -1,13 +1,15 @@
 """DI seam: wires the pipeline's external dependencies (OpenAI, HTTP, clock) into one object."""
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 
 from specula_api.config import Settings
 from specula_api.pipeline.http import Fetcher, PoliteFetcher, RecordedFetcher, RecordingFetcher
 from specula_api.pipeline.openai_client import (
+    CostSink,
+    MeteringOpenAIClient,
     OpenAIClient,
     OpenAIResponsesClient,
     RecordedOpenAIClient,
@@ -25,6 +27,9 @@ class PipelineDeps:
     fetcher: Fetcher
     settings: Settings
     now: Callable[[], datetime]  # deterministic clock override for tests
+    # Populated by build_deps; None for hand-built deps in unit/pipeline tests. When set,
+    # services/run.py drains it into `llm_costs` rows + the `runs.cost_usd` rollup (OBS).
+    cost_sink: CostSink | None = None
 
     async def aclose(self) -> None:
         await self.openai.aclose()
@@ -64,10 +69,22 @@ def build_record_deps(settings: Settings, fixtures_dir: Path) -> PipelineDeps:
     )
 
 
+def _with_metering(deps: PipelineDeps, settings: Settings) -> PipelineDeps:
+    """Wrap deps.openai in cost metering feeding a fresh per-run CostSink (OBS). The budget
+    ceilings come from Settings; the daily baseline is seeded later, on the request's session."""
+    sink = CostSink(
+        run_budget_usd=settings.openai_run_budget_usd,
+        daily_budget_usd=settings.openai_daily_budget_usd,
+    )
+    return replace(deps, openai=MeteringOpenAIClient(deps.openai, sink, settings), cost_sink=sink)
+
+
 def build_deps(settings: Settings) -> PipelineDeps:
     fixtures_dir = Path(settings.pipeline_fixtures_dir or DEFAULT_FIXTURES_DIR)
     if settings.pipeline_mode == "recorded":
-        return build_recorded_deps(settings, fixtures_dir)
-    if settings.pipeline_mode == "record":
-        return build_record_deps(settings, fixtures_dir)
-    return build_live_deps(settings)
+        base = build_recorded_deps(settings, fixtures_dir)
+    elif settings.pipeline_mode == "record":
+        base = build_record_deps(settings, fixtures_dir)
+    else:
+        base = build_live_deps(settings)
+    return _with_metering(base, settings)

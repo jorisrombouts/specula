@@ -16,7 +16,10 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from specula_api.db.models import CandidateProfile, Posting, Score, SkillsTaxonomy, Targeting
+from specula_api.observability import get_logger
 from specula_api.pipeline.deps import PipelineDeps
+
+_log = get_logger("pipeline.score")
 
 _SKILL_OVERLAP_WEIGHT = 0.6
 _SKILL_COSINE_WEIGHT = 0.4
@@ -220,6 +223,7 @@ async def score_posting(
     # being scored, never caller input — this only confirms the two already agree.
     assert posting.user_id == user_id, "score_posting: posting.user_id must match user_id"
 
+    _log.info("pipeline.stage", extra={"stage": "score", "posting_id": str(posting.id)})
     alias_map = await _alias_map(session)
     required_canon = _canon_set(posting.required_skills, alias_map)
     candidate_canon = _canon_set(candidate.skills, alias_map)

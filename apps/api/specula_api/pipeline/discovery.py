@@ -9,10 +9,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from specula_api.db.models import Approval, Company, Lens, Targeting
+from specula_api.observability import get_logger
 from specula_api.pipeline.deps import PipelineDeps
 from specula_api.pipeline.openai_client import Source
 from specula_api.pipeline.source import ATS_ALLOWED_DOMAINS, detect_ats
 from specula_api.pipeline.util import favicon_url
+
+_log = get_logger("pipeline.discovery")
 
 
 class DiscoverResult(BaseModel):
@@ -81,6 +84,7 @@ async def discover(
 
     lenses = list((await session.scalars(select(Lens).where(Lens.user_id == user_id))).all())
     queries = build_seed_queries(role_titles, lenses, cap=deps.settings.discovery_max_searches)
+    _log.info("pipeline.stage", extra={"stage": "discovery", "queries": len(queries)})
     if not queries:
         return DiscoverResult()
 

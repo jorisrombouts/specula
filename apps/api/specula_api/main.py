@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 
 from specula_api.config import settings
+from specula_api.observability import RequestContextMiddleware, init_observability
 from specula_api.routers import api_router
 
 
@@ -11,7 +12,10 @@ def create_app() -> FastAPI:
     if not settings.service_jwt_secret and settings.app_env != "development":
         raise RuntimeError("SERVICE_JWT_SECRET must be set (empty secret accepts forged tokens).")
 
+    init_observability(settings)
+
     app = FastAPI(title="Specula API")
+    app.add_middleware(RequestContextMiddleware)
 
     @app.get("/health")
     def health() -> dict[str, str]:

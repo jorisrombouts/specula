@@ -1,16 +1,20 @@
 """Enrich stage: best-effort fetch of the company's page, then LLM-enrich it."""
 
 from specula_api.db.models import Company
+from specula_api.observability import get_logger
 from specula_api.pipeline.deps import PipelineDeps
 from specula_api.pipeline.openai_client import EnrichResult
 from specula_api.pipeline.source import detect_ats
 from specula_api.pipeline.util import html_to_text, to_country_code
+
+_log = get_logger("pipeline.enrich")
 
 
 async def enrich_company(company: Company, deps: PipelineDeps) -> EnrichResult:
     """Best-effort: fetch the company's careers/home page (tolerate 404 — RecordedFetcher/miss
     yields status 404), then LLM-enrich. Returns values to APPLY to the Company (caller applies
     them). Logo stays a favicon URL (never object storage)."""
+    _log.info("pipeline.stage", extra={"stage": "enrich", "company_id": str(company.id)})
     url = company.careers_url or f"https://{company.domain}"
     doc = await deps.fetcher.get(url)
     page_text = html_to_text(doc.text) if doc.status == 200 else None

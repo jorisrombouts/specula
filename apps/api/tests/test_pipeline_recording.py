@@ -18,6 +18,7 @@ from specula_api.pipeline.http import FetchedDoc, RecordedFetcher, RecordingFetc
 from specula_api.pipeline.openai_client import (
     EnrichResult,
     ExtractionResult,
+    MeteringOpenAIClient,
     RecordedOpenAIClient,
     RecordingOpenAIClient,
     Source,
@@ -190,7 +191,10 @@ async def test_build_deps_record_mode_wires_recording_variants(tmp_path: Path) -
         )
     )
     try:
-        assert isinstance(deps.openai, RecordingOpenAIClient)
+        # build_deps now wraps the mode-selected client in cost metering (OBS lane); the
+        # recording variant is the wrapped `inner`.
+        assert isinstance(deps.openai, MeteringOpenAIClient)
+        assert isinstance(deps.openai.inner, RecordingOpenAIClient)
         assert isinstance(deps.fetcher, RecordingFetcher)
     finally:
         await deps.aclose()
