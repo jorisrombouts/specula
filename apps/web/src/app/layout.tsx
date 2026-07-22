@@ -8,6 +8,7 @@ import {
 } from "next/font/google";
 import "./globals.css";
 import { INIT_SCRIPT } from "@/lib/tweaks-init";
+import { InlineScript } from "@/components/inline-script";
 
 // Spectral is NOT a variable font on Google Fonts — explicit weights are required.
 const spectral = Spectral({
@@ -49,7 +50,7 @@ export default function RootLayout({
       suppressHydrationWarning
     >
       <head>
-        <script dangerouslySetInnerHTML={{ __html: INIT_SCRIPT }} />
+        <InlineScript html={INIT_SCRIPT} />
       </head>
       <body className="bg-paper text-ink">{children}</body>
     </html>
