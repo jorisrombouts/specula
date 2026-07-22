@@ -715,10 +715,10 @@ legal and getting-blocked risk. This is a set of *requirements*, not a reason to
   dedup; hybrid salary-blind scoring + rationale; low-confidence handling; Insights aggregates from
   real data. *(§5–6.)*
 
-  > **Current build note:** M3 and M4 are being built as ONE manually-triggered vertical slice —
-  > discovery → approval → enrich → crawl → extract → dedup → score → render — run inline on demand.
-  > A later milestone owns **automation**: the weekly scheduler and its background-worker/queue and
-  > hosting infra (§7).
+  > **Build note (M3+M4 shipped, `45dee7f`):** M3 and M4 were built as ONE manually-triggered
+  > vertical slice — discovery → approval → enrich → crawl → extract → dedup → score → render — run
+  > inline on demand. A later milestone owns **automation**: the weekly scheduler and its
+  > background-worker/queue and hosting infra (§7). Status: `docs/M4-STATUS.md`.
 - **M5 — Hardening.** Observability, rate limits, scraping politeness, export/delete; E2E + load
   test; cost controls. *(§15–16.)*
 - **M6 — Polish & launch.** Keyboard nav/a11y pass, onboarding (collect starting companies), empty/

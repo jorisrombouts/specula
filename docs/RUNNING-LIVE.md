@@ -4,9 +4,11 @@ How to prove the discovery → approval → enrich → crawl → extract → emb
 against **real** OpenAI calls (and real ATS traffic), on the demo tenant, and regenerate the
 committed recorded fixtures (`apps/api/tests/fixtures/pipeline`) from what it actually returns.
 
-This has never been run against a real API key — everything up to this point has been reviewed
-against the installed `openai` SDK and exercised via `RecordedOpenAIClient`/`RecordedFetcher`
-fixtures. Running it live is what actually validates the shapes.
+M4 was proven this way — running it live against real ATS boards and a real OpenAI key is what
+surfaced (and then fixed) the bugs the fixture suite couldn't see; see `docs/M4-STATUS.md`.
+Re-run it when a pipeline contract changes, to re-validate the shapes and refresh the recorded
+fixtures. Day-to-day the suite replays `RecordedOpenAIClient`/`RecordedFetcher` fixtures, so most
+work needs no live run at all.
 
 ## Cost + blast radius
 
