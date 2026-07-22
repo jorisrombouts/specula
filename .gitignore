@@ -46,3 +46,5 @@ apps/api/tests/fixtures/pipeline/http/*.json
 
 # git worktrees for parallel M2 fan-out lanes
 .worktrees/
+.lane-status.md
+.lane-report.md
