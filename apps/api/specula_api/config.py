@@ -70,5 +70,22 @@ class Settings(BaseSettings):
     pipeline_execution: Literal["enqueue", "inline"] = "inline"  # no Redis/worker this milestone
     pipeline_fixtures_dir: str | None = None
 
+    # --- M5 hardening ---
+    openai_run_budget_usd: float = 5.0  # abort/mark a run/ingest if its LLM spend exceeds this
+    openai_daily_budget_usd: float = 20.0  # per-user daily ceiling across runs
+    run_rate_limit_per_hour: int = 10  # on-demand trigger cap (NET gate)
+    run_cooldown_s: int = 60  # min seconds between a user's triggers
+    log_level: str = "INFO"
+    sentry_dsn: str | None = None  # None → Sentry disabled (live wiring deferred with hosting)
+    otel_enabled: bool = False
+
+
+# USD per 1,000,000 tokens. Embedding models bill only on `embed`.
+# Verify rates against current OpenAI pricing before going live.
+OPENAI_PRICING: dict[str, dict[str, float]] = {
+    "gpt-4o": {"prompt": 2.50, "completion": 10.00, "embed": 0.0},
+    "gpt-4o-mini": {"prompt": 0.15, "completion": 0.60, "embed": 0.0},
+    "text-embedding-3-small": {"prompt": 0.0, "completion": 0.0, "embed": 0.02},
+}
 
 settings = Settings()
