@@ -1,10 +1,12 @@
 # Specula
 
 Personal, multi-tenant "role ledger": job discovery + salary-blind match scoring, with an
-editorial-instrument UI. Built in phases (M0–M6). **M0–M4 are done** — the full pipeline
+editorial-instrument UI. Built in phases (M0–M6). **M0–M5 are done** — the full pipeline
 (discover → approve → crawl → extract → score) runs on a manual, inline trigger and is
-live-proven against real ATS boards and OpenAI. **M5 (Hardening)** is the current focus.
-See `docs/M4-STATUS.md` for what shipped and `CLAUDE.md` for the build rules.
+live-proven against real ATS boards and OpenAI; M5 hardened it (observability + OpenAI cost
+ledger + budget guard, rate limits, GDPR export/delete, run & cost dashboard, load/E2E).
+**M6 (Polish & launch)** is the current focus. See `docs/M5-STATUS.md` for what shipped and
+`CLAUDE.md` for the build rules.
 
 ## Prerequisites
 
