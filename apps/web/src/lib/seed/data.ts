@@ -14,11 +14,22 @@ export const candidate: Candidate = {
   initials: "JV",
   title: "Data Scientist / ML Engineer",
   location: "Amsterdam, NL",
-  workMode: "Remote-first (EU)",
-  visa: "EU citizen — no sponsorship needed",
+  workMode: ["Remote", "Hybrid", "On-site"],
+  visa: "EU/EEA/Swiss citizen — no sponsorship",
   years: 6,
-  education: "MSc Artificial Intelligence — University of Amsterdam",
-  languages: ["English (native-level)", "Dutch (native)", "German (B1)"],
+  education: [
+    {
+      degree: "MSc",
+      field: "Artificial Intelligence",
+      institution: "University of Amsterdam",
+      year: 2019,
+    },
+  ],
+  languages: [
+    { language: "English", level: "Native" },
+    { language: "Dutch", level: "Native" },
+    { language: "German", level: "B1" },
+  ],
   skills: [
     "Python",
     "PyTorch",
@@ -50,8 +61,13 @@ export const candidate: Candidate = {
     },
   ],
   experience: [
-    { role: "Senior Data Scientist", org: "Mollie", period: "2022 — now" },
-    { role: "ML Engineer", org: "Adyen", period: "2019 — 2022" },
+    {
+      role: "Senior Data Scientist",
+      org: "Mollie",
+      startYear: 2022,
+      endYear: null,
+    },
+    { role: "ML Engineer", org: "Adyen", startYear: 2019, endYear: 2022 },
   ],
 };
 

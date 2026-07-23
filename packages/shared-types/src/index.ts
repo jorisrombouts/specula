@@ -50,10 +50,9 @@ export interface ExperienceEntry {
 
 export interface Candidate {
   name: string; initials: string; title: string; location: string;
-  workMode: string; visa: string; years: number; education: string;
-  languages: string[]; skills: string[];
-  projects: { name: string; note: string }[];
-  experience: { role: string; org: string; period: string }[];
+  workMode: Mode[]; visa: Visa | ""; years: number;
+  education: EducationEntry[]; languages: LanguageEntry[]; skills: string[];
+  projects: ProjectEntry[]; experience: ExperienceEntry[];
 }
 export interface Targeting {
   roleTitles: string[]; seniority: string[]; mustHaves: string[];
