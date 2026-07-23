@@ -22,12 +22,37 @@ export interface Lens {
 }
 export interface LensSummary extends Lens { count: number; isNew: number }
 
+// ⚠ Enum source of truth. Mirrored in apps/api/specula_api/schemas/candidate.py
+// (Mode / Visa / CefrLevel Literals). Keep both in sync.
+export type CefrLevel = "Native" | "C2" | "C1" | "B2" | "B1" | "A2" | "A1";
+export const CEFR_LEVELS: readonly CefrLevel[] = [
+  "Native", "C2", "C1", "B2", "B1", "A2", "A1",
+];
+
+export const VISA_OPTIONS = [
+  "EU/EEA/Swiss citizen — no sponsorship",
+  "Have EU work/residence permit — no sponsorship",
+  "Require visa sponsorship",
+  "Require relocation + sponsorship",
+] as const;
+export type Visa = (typeof VISA_OPTIONS)[number];
+
+export const WORK_MODES: readonly Mode[] = ["Remote", "Hybrid", "On-site"];
+
+export interface LanguageEntry { language: string; level: CefrLevel }
+export interface EducationEntry {
+  degree: string; field: string; institution: string; year: number | null;
+}
+export interface ProjectEntry { name: string; note: string }
+export interface ExperienceEntry {
+  role: string; org: string; startYear: number | null; endYear: number | null;
+}
+
 export interface Candidate {
   name: string; initials: string; title: string; location: string;
-  workMode: string; visa: string; years: number; education: string;
-  languages: string[]; skills: string[];
-  projects: { name: string; note: string }[];
-  experience: { role: string; org: string; period: string }[];
+  workMode: Mode[]; visa: Visa | ""; years: number;
+  education: EducationEntry[]; languages: LanguageEntry[]; skills: string[];
+  projects: ProjectEntry[]; experience: ExperienceEntry[];
 }
 export interface Targeting {
   roleTitles: string[]; seniority: string[]; mustHaves: string[];

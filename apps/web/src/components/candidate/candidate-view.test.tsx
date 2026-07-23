@@ -15,9 +15,8 @@ const c = await getCandidate();
 const gap = await getSkillsGap();
 
 describe("CandidateView", () => {
-  it("renders the profile field values (name/initials aren't sourced from the API)", () => {
+  it("renders the profile field values", () => {
     render(<CandidateView candidate={c} skillsGap={gap} />);
-    expect(c.initials).toBe(""); // not stored server-side; sourced from the session elsewhere
     expect(screen.getByDisplayValue(c.title)).toBeInTheDocument();
     expect(screen.getByDisplayValue(c.location)).toBeInTheDocument();
   });
@@ -26,21 +25,25 @@ describe("CandidateView", () => {
     render(<CandidateView candidate={c} skillsGap={gap} />);
     expect(screen.getByText("Skills gap")).toBeInTheDocument();
     expect(screen.getByText(gap[0].skill)).toBeInTheDocument();
-    expect(screen.getByText(`${gap[0].roles}×`)).toBeInTheDocument();
   });
 
-  it("removes and adds a skill tag locally (wiring)", () => {
+  it("gates Save on dirty state", () => {
     render(<CandidateView candidate={c} skillsGap={gap} />);
-    const first = c.skills[0];
-    // remove the first skill chip via its × (aria-label from the TagEditor atom)
-    fireEvent.click(screen.getByLabelText(`remove ${first}`));
-    expect(screen.queryByLabelText(`remove ${first}`)).toBeNull();
-    // add a new skill: the single "+ add" is the Skills TagEditor's
-    fireEvent.click(screen.getByText("+ add"));
-    const input = document.activeElement as HTMLInputElement; // autofocused add input
-    fireEvent.change(input, { target: { value: "GraphQL" } });
-    fireEvent.keyDown(input, { key: "Enter" });
-    expect(screen.getByText("GraphQL")).toBeInTheDocument();
+    const save = screen.getByText("Save profile");
+    expect(save).toBeDisabled();
+    fireEvent.change(screen.getByDisplayValue(c.title), {
+      target: { value: "Staff ML Engineer" },
+    });
+    expect(save).not.toBeDisabled();
+    expect(screen.getByText("Unsaved changes")).toBeInTheDocument();
+  });
+
+  it("adds a demanded skill from the skills-gap panel and drops the gap row", () => {
+    render(<CandidateView candidate={c} skillsGap={gap} />);
+    const target = gap[0].skill;
+    fireEvent.click(screen.getByLabelText(`add ${target} to skills`));
+    expect(screen.getByLabelText(`remove ${target}`)).toBeInTheDocument();
+    expect(screen.queryByLabelText(`add ${target} to skills`)).toBeNull();
   });
 
   it("Save profile PUTs the edited fields through the BFF route", async () => {
@@ -62,6 +65,7 @@ describe("CandidateView", () => {
     const [, init] = fetchMock.mock.calls[0];
     const body = JSON.parse(init!.body as string);
     expect(body.headline).toBe("Staff ML Engineer");
+    expect(Array.isArray(body.workMode)).toBe(true);
     fetchMock.mockRestore();
   });
 });

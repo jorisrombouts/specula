@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
 
 type Kind = "default" | "syn" | "avoid";
 const chipCls: Record<Kind, string> = {
@@ -18,13 +18,16 @@ export function TagEditor({
   values,
   onChange,
   kind = "default",
+  suggestions,
 }: {
   values: string[];
   onChange: (v: string[]) => void;
   kind?: Kind;
+  suggestions?: string[];
 }) {
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState("");
+  const listId = useId();
   const commit = () => {
     const v = draft.trim();
     if (v && !values.includes(v)) onChange([...values, v]);
@@ -50,14 +53,24 @@ export function TagEditor({
         </span>
       ))}
       {adding ? (
-        <input
-          autoFocus
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && commit()}
-          onBlur={commit}
-          className="rounded-[7px] border border-rule-2 bg-card px-3 py-[6px] text-[12.5px] text-ink outline-none focus:border-ink"
-        />
+        <>
+          <input
+            autoFocus
+            list={suggestions ? listId : undefined}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && commit()}
+            onBlur={commit}
+            className="rounded-[7px] border border-rule-2 bg-card px-3 py-[6px] text-[12.5px] text-ink outline-none focus:border-ink"
+          />
+          {suggestions && (
+            <datalist id={listId}>
+              {suggestions.map((s) => (
+                <option key={s} value={s} />
+              ))}
+            </datalist>
+          )}
+        </>
       ) : (
         <button
           type="button"

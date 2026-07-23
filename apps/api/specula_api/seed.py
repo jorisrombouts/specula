@@ -931,11 +931,22 @@ async def seed(
             user_id=uid,
             headline="Data Scientist / ML Engineer",
             location="Amsterdam, NL",
-            work_mode="Remote-first (EU)",
-            visa="EU citizen — no sponsorship needed",
+            work_mode=["Remote", "Hybrid", "On-site"],
+            visa="EU/EEA/Swiss citizen — no sponsorship",
             years=6,
-            education="MSc Artificial Intelligence — University of Amsterdam",
-            languages=["English (native-level)", "Dutch (native)", "German (B1)"],
+            education=[
+                {
+                    "degree": "MSc",
+                    "field": "Artificial Intelligence",
+                    "institution": "University of Amsterdam",
+                    "year": 2019,
+                }
+            ],
+            languages=[
+                {"language": "English", "level": "Native"},
+                {"language": "Dutch", "level": "Native"},
+                {"language": "German", "level": "B1"},
+            ],
             skills=[
                 "Python",
                 "PyTorch",
@@ -967,8 +978,13 @@ async def seed(
                 },
             ],
             experience=[
-                {"role": "Senior Data Scientist", "org": "Mollie", "period": "2022 — now"},
-                {"role": "ML Engineer", "org": "Adyen", "period": "2019 — 2022"},
+                {
+                    "role": "Senior Data Scientist",
+                    "org": "Mollie",
+                    "start_year": 2022,
+                    "end_year": None,
+                },
+                {"role": "ML Engineer", "org": "Adyen", "start_year": 2019, "end_year": 2022},
             ],
         )
     )

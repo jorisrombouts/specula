@@ -1,16 +1,21 @@
 "use client";
 
-import { useState } from "react";
-import type { Candidate, SkillsGap } from "@specula/shared-types";
+import { useMemo, useState } from "react";
+import type { Candidate, SkillsGap, Visa } from "@specula/shared-types";
+import { VISA_OPTIONS } from "@specula/shared-types";
 import { TagEditor } from "@/components/atoms/tag-editor";
 import { Button } from "@/components/atoms/button";
 import { Field } from "@/components/config/field";
-import { saveCandidate } from "@/lib/api/candidate";
+import { ModeSelect } from "@/components/candidate/mode-select";
+import { LanguageEditor } from "@/components/candidate/language-editor";
+import { EducationEditor } from "@/components/candidate/education-editor";
+import { ProjectEditor } from "@/components/candidate/project-editor";
+import { ExperienceEditor } from "@/components/candidate/experience-editor";
+import { COMMON_SKILLS } from "@/lib/skills-catalog";
+import { saveCandidate, type CandidatePatch } from "@/lib/api/candidate";
 
 const INPUT =
   "w-full rounded-[9px] border border-rule-2 bg-card px-[13px] py-[11px] font-body text-[13.5px] text-ink focus:border-ink focus:outline-none";
-const CHIP =
-  "mb-2 block rounded-[7px] border border-rule bg-panel px-3 py-[6px] text-[12.5px] text-ink";
 
 export function CandidateView({
   candidate: c,
@@ -19,32 +24,47 @@ export function CandidateView({
   candidate: Candidate;
   skillsGap: SkillsGap[];
 }) {
-  const [title, setTitle] = useState(c.title);
-  const [location, setLocation] = useState(c.location);
-  const [workMode, setWorkMode] = useState(c.workMode);
-  const [visa, setVisa] = useState(c.visa);
-  const [years, setYears] = useState(c.years);
-  const [skills, setSkills] = useState(c.skills);
+  const initial: CandidatePatch = useMemo(
+    () => ({
+      title: c.title,
+      location: c.location,
+      workMode: c.workMode,
+      visa: c.visa,
+      years: c.years,
+      education: c.education,
+      languages: c.languages,
+      skills: c.skills,
+      projects: c.projects,
+      experience: c.experience,
+    }),
+    [c],
+  );
+
+  const [form, setForm] = useState<CandidatePatch>(initial);
+  const [baseline, setBaseline] = useState<CandidatePatch>(initial);
   const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
+  const [justSaved, setJustSaved] = useState(false);
+
+  const dirty = useMemo(
+    () => JSON.stringify(form) !== JSON.stringify(baseline),
+    [form, baseline],
+  );
+
+  const set = <K extends keyof CandidatePatch>(k: K, v: CandidatePatch[K]) => {
+    setForm((f) => ({ ...f, [k]: v }));
+    setJustSaved(false);
+  };
+
+  const hasSkill = (s: string) =>
+    form.skills.some((x) => x.toLowerCase() === s.toLowerCase());
+  const visibleGap = skillsGap.filter((g) => !hasSkill(g.skill));
 
   const handleSave = async () => {
     setSaving(true);
-    setSaved(false);
     try {
-      await saveCandidate({
-        title,
-        location,
-        workMode,
-        visa,
-        years,
-        skills,
-        education: c.education,
-        languages: c.languages,
-        projects: c.projects,
-        experience: c.experience,
-      });
-      setSaved(true);
+      await saveCandidate(form);
+      setBaseline(form);
+      setJustSaved(true);
     } finally {
       setSaving(false);
     }
@@ -76,23 +96,22 @@ export function CandidateView({
           <Field label="Headline">
             <input
               className={INPUT}
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
+              value={form.title}
+              onChange={(e) => set("title", e.target.value)}
             />
           </Field>
           <div className="grid grid-cols-2 gap-[16px]">
             <Field label="Location">
               <input
                 className={INPUT}
-                value={location}
-                onChange={(e) => setLocation(e.target.value)}
+                value={form.location}
+                onChange={(e) => set("location", e.target.value)}
               />
             </Field>
             <Field label="Work mode">
-              <input
-                className={INPUT}
-                value={workMode}
-                onChange={(e) => setWorkMode(e.target.value)}
+              <ModeSelect
+                value={form.workMode}
+                onChange={(v) => set("workMode", v)}
               />
             </Field>
             <Field label="Years experience">
@@ -100,61 +119,78 @@ export function CandidateView({
                 className={INPUT}
                 type="number"
                 min={0}
-                value={years}
-                onChange={(e) => setYears(Number(e.target.value))}
+                value={form.years}
+                onChange={(e) => set("years", Number(e.target.value))}
               />
             </Field>
             <Field label="Visa">
-              <input
+              <select
                 className={INPUT}
-                value={visa}
-                onChange={(e) => setVisa(e.target.value)}
-              />
-            </Field>
-          </div>
-          <Field label="Skills · matched against required_skills">
-            <TagEditor values={skills} onChange={setSkills} />
-          </Field>
-          <Field label="Projects">
-            {c.projects.map((p) => (
-              <div
-                key={p.name}
-                className="mb-2 block rounded-[7px] border border-rule-2 bg-card px-3 py-[6px] text-[12.5px] text-ink"
+                value={form.visa}
+                onChange={(e) => set("visa", e.target.value as Visa | "")}
               >
-                <b>{p.name}</b> <span className="text-ink-2">— {p.note}</span>
-              </div>
-            ))}
-          </Field>
-          <div className="grid grid-cols-2 gap-[16px]">
-            <Field label="Experience">
-              {c.experience.map((e) => (
-                <div key={e.org} className={CHIP}>
-                  <b>{e.role}</b> · {e.org}{" "}
-                  <span className="font-mono text-[11px] text-ink-2">
-                    {e.period}
-                  </span>
-                </div>
-              ))}
-            </Field>
-            <Field label="Education & languages">
-              <div className={CHIP}>{c.education}</div>
-              <div className="flex flex-wrap gap-2">
-                {c.languages.map((l) => (
-                  <span
-                    key={l}
-                    className="rounded-[7px] border border-rule bg-panel px-3 py-[6px] text-[12.5px] text-ink"
-                  >
-                    {l}
-                  </span>
+                <option value="">— select —</option>
+                {VISA_OPTIONS.map((v) => (
+                  <option key={v} value={v}>
+                    {v}
+                  </option>
                 ))}
-              </div>
+              </select>
             </Field>
           </div>
+
+          <Field label="Skills · matched against required_skills">
+            <TagEditor
+              values={form.skills}
+              onChange={(v) => set("skills", v)}
+              suggestions={COMMON_SKILLS}
+            />
+          </Field>
+
+          <Field label="Projects">
+            <ProjectEditor
+              value={form.projects}
+              onChange={(v) => set("projects", v)}
+            />
+          </Field>
+
+          <Field label="Experience">
+            <ExperienceEditor
+              value={form.experience}
+              onChange={(v) => set("experience", v)}
+            />
+          </Field>
+
+          <Field label="Education">
+            <EducationEditor
+              value={form.education}
+              onChange={(v) => set("education", v)}
+            />
+          </Field>
+
+          <Field label="Languages">
+            <LanguageEditor
+              value={form.languages}
+              onChange={(v) => set("languages", v)}
+            />
+          </Field>
+
           <div className="mt-[18px] flex items-center gap-[12px]">
-            <Button variant="pri" onClick={handleSave} disabled={saving}>
+            <Button
+              variant="pri"
+              onClick={handleSave}
+              disabled={saving || !dirty}
+            >
               {saving ? "Saving…" : "Save profile"}
             </Button>
-            {saved && <span className="text-[12.5px] text-ink-2">Saved.</span>}
+            {dirty && (
+              <span className="font-mono text-[11.5px] text-warn">
+                Unsaved changes
+              </span>
+            )}
+            {!dirty && justSaved && (
+              <span className="text-[12.5px] text-ink-2">Saved.</span>
+            )}
           </div>
         </div>
 
@@ -172,7 +208,7 @@ export function CandidateView({
               Most-demanded skills across your target roles that aren&apos;t on
               your profile:
             </p>
-            {skillsGap.map((g) => (
+            {visibleGap.map((g) => (
               <div
                 key={g.skill}
                 className="flex items-center gap-[11px] border-b border-rule py-[11px] last:border-b-0"
@@ -186,13 +222,21 @@ export function CandidateView({
                     />
                   ))}
                 </span>
-                <div>
+                <div className="min-w-0 flex-1">
                   <div className="text-[13px] font-semibold">{g.skill}</div>
                   <div className="mt-px font-mono text-[10.5px] text-ink-2">
                     {g.note}
                   </div>
                 </div>
-                <span className="ml-auto font-mono text-[18px] font-semibold text-warn">
+                <button
+                  type="button"
+                  aria-label={`add ${g.skill} to skills`}
+                  onClick={() => set("skills", [...form.skills, g.skill])}
+                  className="rounded-[7px] border border-rule-2 bg-card px-[9px] py-[5px] text-[11px] text-accent-ink hover:border-accent hover:bg-accent-bg"
+                >
+                  + add
+                </button>
+                <span className="font-mono text-[18px] font-semibold text-warn">
                   {g.roles}×
                 </span>
               </div>
