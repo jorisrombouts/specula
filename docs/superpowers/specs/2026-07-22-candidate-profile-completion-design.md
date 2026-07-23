@@ -1,6 +1,6 @@
 # Candidate Profile completion — design
 
-**Date:** 2026-07-22 · **Milestone:** M6 (Polish & launch) · **Status:** approved for planning
+**Date:** 2026-07-22 (rev. 2026-07-23) · **Milestone:** M6 (Polish & launch) · **Status:** approved for planning
 
 ## Problem
 
@@ -26,11 +26,15 @@ passed straight from `c.*` in `handleSave`).
 
 ## Goal
 
-Turn `/candidate` into a fully-editable, structured profile:
+Turn `/candidate` into a fully-editable, structured profile that collects
+high-quality, low-freeform data:
 
-1. Convert free-text fields to constrained inputs (work mode, visa).
+1. Convert free-text fields to constrained inputs (work mode, visa) and
+   **structured year pickers** for experience/education dates.
 2. Make the four read-only sections editable with structured row editors.
-3. Fold in two chosen polish improvements: **actionable skills-gap** and
+3. Add **skill suggestions** (typeahead over a bundled common-skills list) to
+   reduce free-text drift on the one field that actually drives matching.
+4. Fold in two chosen polish improvements: **actionable skills-gap** and
    **better save UX (dirty-state)**.
 
 The backend already persists every field (`candidate_profiles` has columns/JSONB
@@ -46,6 +50,13 @@ validation**. No new endpoints.
 - Wiring skill re-embedding on write. `upsert_candidate` does **not** currently
   re-embed skills although spec §504 says it should. This is a pre-existing
   spec/code gap; it is noted but **not** fixed here.
+- **Location autocomplete** — evaluated (bundled city list / Photon-OSM / Google
+  Places). Deferred: candidate location is a non-scoring personal descriptor
+  (spec §4.2), so typeahead here is polish, not data quality. Location stays a
+  plain text input.
+- **Achievements / impact highlights** — deferred to a fast follow-up. Bounded
+  per-role highlights would help match rationale and CV-bullet drafting, but it's
+  a scope expansion beyond finishing the page (and nudges toward a parsed-CV feel).
 
 ## Product constraints carried in from the spec
 
@@ -85,22 +96,38 @@ exists). Seed maps `"EU citizen — no sponsorship needed"` → option 1.
   {language:"German", level:"B1"}]`.
 
 ### Education — structured `{degree, field, institution, year}[]`
-- Row editor. `year` is an optional string (kept simple; not validated as a date).
-- Type change: `Candidate.education: string` → structured array.
+- Row editor. `year` is a **completion year picked from a year `<select>`**
+  (constrained, not free text), typed `number | null`.
+- Type change: `Candidate.education: string` →
+  `{ degree: string; field: string; institution: string; year: number | null }[]`.
 - Seed `"MSc Artificial Intelligence — University of Amsterdam"` becomes
   `[{degree:"MSc", field:"Artificial Intelligence",
-  institution:"University of Amsterdam", year:"2019"}]`.
+  institution:"University of Amsterdam", year:2019}]`.
 
 ### Projects — `{name, note}[]` (shape unchanged, now editable)
 - Row editor: add / edit / remove rows of `{name, note}`.
 
-### Experience — `{role, org, period}[]` (shape unchanged, now editable)
-- Row editor: add / edit / remove rows of `{role, org, period}`. `period` stays
-  free text (e.g. `"2022 — now"`).
+### Experience — structured `{role, org, startYear, endYear}[]`
+- Row editor: add / edit / remove rows. `startYear` / `endYear` are **year
+  `<select>`s** (constrained, replacing the old free-text `period`). `endYear =
+  null` renders as **"Present"** (ongoing role); tenure is then computable.
+- Shape change: `{role, org, period}` → `{role, org, startYear: number | null,
+  endYear: number | null }`.
+- Seed becomes `[{role:"Senior Data Scientist", org:"Mollie", startYear:2022,
+  endYear:null}, {role:"ML Engineer", org:"Adyen", startYear:2019, endYear:2022}]`.
+
+### Skills — tag editor + suggestions
+- Keeps the `TagEditor` chip model, plus a **typeahead** over a bundled
+  common-skills list (native `<datalist>`), with **free-add fallback** (any typed
+  value is still accepted). Frontend-only; **no schema change** (`skills` stays
+  `text[]`).
+- Rationale: skills are canonicalized and drive the skill factor, so reducing
+  free-text drift here improves match quality — unlike location, which is
+  non-scoring. The common-skills list is a small curated static asset in the web app.
 
 ### Unchanged
-Headline (free text), Location (free text), Years (number ≥ 0), Skills
-(`TagEditor`).
+Headline (free text), **Location (free text — autocomplete deferred, see
+non-goals)**, Years experience (number ≥ 0).
 
 ---
 
@@ -143,13 +170,17 @@ migration alters three columns on `candidate_profiles`:
 |---|---|---|---|
 | `work_mode` | `text` | `text[]` | wrap existing scalar into a one-element array |
 | `languages` | `text[]` | `jsonb` | each string → `{language: <str>, level: ""}` (best-effort) |
-| `education` | `text` | `jsonb` | existing string → `[{degree:"", field:<str>, institution:"", year:""}]` |
+| `education` | `text` | `jsonb` | existing string → `[{degree:"", field:<str>, institution:"", year:null}]` |
 
 The migration must be reversible (`downgrade` collapses arrays/JSONB back to the
 scalar/`text[]` forms, best-effort).
 
-`projects` and `experience` are already `jsonb` — no column change, only new
-editors.
+`projects` and `experience` stay `jsonb` — **no column-type change**. But
+`experience` **objects change shape** (`period` → `startYear`/`endYear`), so the
+same migration best-effort rewrites existing rows: parse a `period` like
+`"2022 — now"` → `{startYear:2022, endYear:null}`; unparseable periods drop to
+`{startYear:null, endYear:null}` (demo data only, low risk). `projects`
+(`{name, note}`) is untouched.
 
 ---
 
@@ -158,9 +189,13 @@ editors.
 Enum constraints enforced in both layers (defense-in-depth; "structured, not
 trusted" ethos):
 
-- **Frontend:** dropdowns / chip-toggles constrain input by construction.
+- **Frontend:** dropdowns / chip-toggles / year `<select>`s constrain input by
+  construction; the skills typeahead suggests but still allows free-add.
 - **Backend:** Pydantic `CandidateIn` uses `Literal`/`Enum` for `visa`, work
-  mode members, and language `level`; rejects out-of-set values.
+  mode members, and language `level`; rejects out-of-set values. Year fields
+  (`startYear`, `endYear`, education `year`) are `int | None` with a sane range
+  bound (e.g. 1950–2100). `skills` remain free `list[str]` (suggestions are a UI
+  affordance, not a server constraint).
 
 Enum source of truth: defined in `packages/shared-types` (TS) and **mirrored** in
 a Python constants module (`schemas/candidate` or a small `constants` module).
@@ -176,10 +211,14 @@ New small, isolated, individually testable editors, each following the existing
 
 - `ModeSelect` — multi-select chip toggles for `Mode[]`.
 - Visa `<select>` — styled native select (inline or a tiny wrapper).
+- `YearSelect` — shared year `<select>` primitive (blank + year range; optional
+  "Present" sentinel that maps to `null` for experience end).
 - `LanguageEditor` — rows of `{language, level}` with a CEFR `<select>`.
-- `EducationEditor` — rows of `{degree, field, institution, year}`.
+- `EducationEditor` — rows of `{degree, field, institution, year}` (year via `YearSelect`).
 - `ProjectEditor` — rows of `{name, note}`.
-- `ExperienceEditor` — rows of `{role, org, period}`.
+- `ExperienceEditor` — rows of `{role, org, startYear, endYear}` (years via `YearSelect`).
+- Skills input — extend `TagEditor` (or a thin `SkillEditor` wrapper) with a
+  `<datalist>` typeahead over the bundled common-skills list; free-add preserved.
 
 `candidate-view.tsx` wires them together, owns form state, the dirty flag, and
 the skills-gap add-flow.
@@ -188,8 +227,9 @@ the skills-gap add-flow.
 
 ## Testing (TDD)
 
-- **Component tests** per editor: add, edit, remove a row; validation/constraint
-  behavior.
+- **Component tests** per editor: add, edit, remove a row; year `<select>`
+  behavior (incl. `endYear=null` → "Present"); skills typeahead still allows a
+  free-add value.
 - **`candidate-view` tests:** dirty-state gates the Save button; skills-gap
   `+ add` moves a skill into Skills and removes the gap row.
 - **API tests:** Pydantic rejects an out-of-set visa / mode / level; accepts
@@ -204,6 +244,7 @@ the skills-gap add-flow.
 - `apps/web/src/components/atoms/` (if a shared select/row primitive is extracted)
 - `apps/web/src/lib/api/candidate.ts` (BFF mapping for new shapes)
 - `apps/web/src/lib/seed/data.ts` (restructured seed)
+- `apps/web/src/lib/skills-catalog.ts` (bundled common-skills suggestion list — new)
 - `packages/shared-types/src/index.ts` (`Candidate`, new `CefrLevel`, visa/enum types)
 - `apps/api/specula_api/schemas/candidate.py` (structured fields + `Literal`/`Enum`)
 - `apps/api/.../db/models/candidate_profile.py` (column types)
