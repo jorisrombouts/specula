@@ -17,6 +17,11 @@ depends_on = None
 
 
 def upgrade() -> None:
+    # Best-effort values below (language `level: ""`, a scalar work_mode wrapped like
+    # `["Remote-first (EU)"]`) are NOT valid under the new API enums — a bare `just migrate`
+    # against a pre-existing old-seed row leaves API-invalid data until `just seed` reseeds.
+    # The standard workflow always reseeds after migrating, so this is expected, not a bug.
+
     # work_mode: text -> text[] (wrap a non-empty scalar into a one-element array)
     op.execute(
         "ALTER TABLE candidate_profiles ALTER COLUMN work_mode TYPE text[] "

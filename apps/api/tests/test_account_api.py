@@ -182,6 +182,38 @@ async def test_export_contains_callers_rows_in_camelcase(migrated_db: None) -> N
 
 
 @requires_db
+async def test_export_includes_populated_candidate_structured_fields(migrated_db: None) -> None:
+    user = await _make_user()
+    try:
+        async with tenant_session(user.id) as session:
+            session.add(
+                CandidateProfile(
+                    user_id=user.id,
+                    headline="Engineer",
+                    work_mode=["Remote"],
+                    education=[
+                        {"degree": "MSc", "field": "AI", "institution": "UvA", "year": 2019}
+                    ],
+                    languages=[{"language": "English", "level": "C2"}],
+                )
+            )
+
+        transport = ASGITransport(app=create_app())
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.get("/api/v1/account/export", headers=_auth_header(user))
+
+        assert response.status_code == 200
+        candidate = response.json()["candidate"]
+        assert candidate["workMode"] == ["Remote"]
+        assert candidate["education"] == [
+            {"degree": "MSc", "field": "AI", "institution": "UvA", "year": 2019}
+        ]
+        assert candidate["languages"] == [{"language": "English", "level": "C2"}]
+    finally:
+        await _cleanup_users(user.id)
+
+
+@requires_db
 async def test_export_excludes_vectors_and_global_taxonomy(migrated_db: None) -> None:
     user = await _make_user()
     async with async_session() as session:
