@@ -41,7 +41,9 @@ class Settings(BaseSettings):
     crawl_user_agent: str = "SpeculaBot/1.0 (+https://specula.app/bot)"
     crawl_per_domain_delay_ms: int = 1000
     crawl_timeout_s: float = 15.0
-    discovery_max_searches: int = 5
+    # Max discovery web-searches per run (lens seeds + role/lens combos, deduped/capped).
+    # One OpenAI web_search call each — the main discovery cost knob. Env-tunable.
+    discovery_max_searches: int = 20
     # Cap the per-company LLM extraction/scoring: a big board (Greenhouse can return 600+
     # jobs) would otherwise fire one extraction call per posting. Shells are still all
     # crawled (cheap); only this many are LLM-extracted + scored per ingest.

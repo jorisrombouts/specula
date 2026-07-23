@@ -114,7 +114,8 @@ async def test_discover_writes_new_approvals_for_resolved_candidates(
     lens = await _seed_targeting_and_lens(db_session, user.id)
 
     queries = build_seed_queries(["ML Engineer"], [lens], cap=5)
-    assert queries == ["ML Engineer jobs Remote EU"]
+    # the lens's own seed ("fintech") is now used, and comes first (verbatim)
+    assert queries == ["fintech", "ML Engineer jobs Remote EU"]
 
     sources_by_query = {
         queries[0]: [
@@ -243,29 +244,35 @@ async def test_discover_returns_zero_result_without_role_titles(db_session: Asyn
 def test_build_seed_queries_composes_role_and_region_hint() -> None:
     lens = Lens(user_id=uuid4(), name="Fintech", seeds=["fintech"], scope="Remote EU", active=True)
     assert build_seed_queries(["Staff Backend Engineer"], [lens], cap=5) == [
-        "Staff Backend Engineer jobs Remote EU"
+        "fintech",  # lens seed first (verbatim)
+        "Staff Backend Engineer jobs Remote EU",
     ]
 
 
-def test_build_seed_queries_ignores_lens_seeds() -> None:
-    """Seeds deliberately do NOT enter the query — the web_search tool is already
-    domain-filtered to ATS hosts, and the old seed-stuffed queries returned 0 sources live."""
+def test_build_seed_queries_uses_lens_seeds_first() -> None:
+    """A lens's own discovery seeds are high-signal, user-crafted queries: they enter the
+    query list verbatim and ahead of the generated '<role> jobs <hint>' combos."""
     lens = Lens(user_id=uuid4(), name="Fintech", seeds=["fintech"], scope="ES", active=True)
-    assert build_seed_queries(["ML Engineer"], [lens], cap=5) == ["ML Engineer jobs Spain"]
+    assert build_seed_queries(["ML Engineer"], [lens], cap=5) == [
+        "fintech",
+        "ML Engineer jobs Spain",
+    ]
 
 
 def test_build_seed_queries_only_includes_active_lenses() -> None:
     active = Lens(user_id=uuid4(), name="A", seeds=["fintech"], scope="ES", active=True)
     inactive = Lens(user_id=uuid4(), name="B", seeds=["climate"], scope="DE", active=False)
     queries = build_seed_queries(["ML Engineer"], [active, inactive], cap=10)
-    assert queries == ["ML Engineer jobs Spain"]
+    # the inactive lens contributes neither its seed nor its scope
+    assert queries == ["fintech", "ML Engineer jobs Spain"]
 
 
 def test_build_seed_queries_dedups_identical_compositions() -> None:
     lens1 = Lens(user_id=uuid4(), name="A", seeds=["fintech"], scope="ES", active=True)
     lens2 = Lens(user_id=uuid4(), name="B", seeds=["climate"], scope="ES", active=True)
     queries = build_seed_queries(["ML Engineer"], [lens1, lens2], cap=10)
-    assert queries == ["ML Engineer jobs Spain"]
+    # both distinct seeds kept; the identical 'ML Engineer jobs Spain' composition appears once
+    assert queries == ["fintech", "climate", "ML Engineer jobs Spain"]
 
 
 def test_build_seed_queries_respects_cap() -> None:
@@ -283,6 +290,8 @@ def test_build_seed_queries_role_titles_are_the_outer_loop() -> None:
     lens_es = Lens(user_id=uuid4(), name="B", seeds=["climate"], scope="ES", active=True)
     queries = build_seed_queries(["ML Engineer", "Data Scientist"], [lens_de, lens_es], cap=10)
     assert queries == [
+        "fintech",  # lens seeds first, in lens order
+        "climate",
         "ML Engineer jobs Germany",
         "ML Engineer jobs Spain",
         "Data Scientist jobs Germany",

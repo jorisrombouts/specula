@@ -148,7 +148,7 @@ async def _seed_targeting_and_pool(session: AsyncSession, user_id: UUID) -> tupl
     lens = Lens(
         user_id=user_id,
         name="Remote EU",
-        seeds=["backend"],
+        seeds=[],  # empty: discovery emits exactly the one composed query the stub is keyed to
         scope="Remote EU",
         modes=["Remote", "Hybrid"],
         active=True,

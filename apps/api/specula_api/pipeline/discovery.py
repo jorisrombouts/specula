@@ -56,22 +56,30 @@ def _region_hint(lens: Lens) -> str:
 
 
 def build_seed_queries(role_titles: list[str], lenses: list[Lens], *, cap: int) -> list[str]:
-    """Effective ATS job-board search queries: '<role> jobs <region hint>'. Role titles are
-    the outer loop so the first `cap` queries span multiple lenses (variety over the cap),
-    deduped. Kept clean — the web_search tool is already domain-filtered to ATS hosts, so the
-    query only needs the role + a location cue, not a pile of synonyms."""
+    """Effective ATS job-board search queries. Each active lens's own discovery seeds are
+    high-signal, user-crafted queries and go FIRST (verbatim); then the generated
+    '<role> jobs <region hint>' combos (role titles outer, so the cap spans lenses).
+    Deduped, capped at `cap`. The web_search tool is already domain-filtered to ATS hosts,
+    so a query only needs the role/seed + a location cue, not a pile of synonyms."""
     active = [lens for lens in lenses if lens.active]
     queries: list[str] = []
     seen: set[str] = set()
-    for role_title in role_titles:
-        for lens in active:
-            hint = _region_hint(lens)
-            query = " ".join(p for p in (role_title.strip(), "jobs", hint) if p)
-            if not query or query in seen:
-                continue
+
+    def _add(query: str) -> bool:
+        """Append a deduped, non-empty query; return True once the cap is full."""
+        query = query.strip()
+        if query and query not in seen:
             seen.add(query)
             queries.append(query)
-            if len(queries) >= cap:
+        return len(queries) >= cap
+
+    for lens in active:
+        for seed in lens.seeds:
+            if _add(seed):
+                return queries
+    for role_title in role_titles:
+        for lens in active:
+            if _add(" ".join(p for p in (role_title.strip(), "jobs", _region_hint(lens)) if p)):
                 return queries
     return queries
 

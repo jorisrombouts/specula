@@ -115,9 +115,9 @@ async def _seed(session: AsyncSession, user_id: UUID) -> str:
         )
     )
     session.add(CandidateProfile(user_id=user_id, skills=["Python", "PostgreSQL"]))
-    lens = Lens(
-        user_id=user_id, name="Remote EU", seeds=["backend"], scope="Remote EU", active=True
-    )
+    # No discovery seeds here: these are cost tests, and an empty-seed lens emits exactly one
+    # composed query, keeping the discovery run to a single measurable web search.
+    lens = Lens(user_id=user_id, name="Remote EU", seeds=[], scope="Remote EU", active=True)
     session.add(lens)
     await session.flush()
     [query] = build_seed_queries(["Backend Engineer"], [lens], cap=5)
