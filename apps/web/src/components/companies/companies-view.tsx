@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Chip } from "@/components/atoms/chip";
 import { Toggle } from "@/components/atoms/toggle";
+import { CompanyLogo } from "@/components/atoms/company-logo";
 import { setCompanyTracking, type CompanyRow } from "@/lib/api/companies";
 
 export function CompaniesView({ companies }: { companies: CompanyRow[] }) {
@@ -97,9 +98,11 @@ export function CompaniesView({ companies }: { companies: CompanyRow[] }) {
               <tr key={c.name} className="transition-colors hover:bg-panel">
                 <td className="border-b border-rule px-[14px] py-[15px] align-middle text-[13.5px]">
                   <div className="flex items-center gap-[11px] font-semibold">
-                    <div className="flex h-[30px] w-[30px] items-center justify-center rounded-[7px] bg-panel-2 font-mono text-[10px] font-semibold text-ink-2">
-                      {c.logo}
-                    </div>
+                    <CompanyLogo
+                      src={c.logo}
+                      name={c.name}
+                      className="flex h-[30px] w-[30px] items-center justify-center rounded-[7px] bg-panel-2 font-mono text-[10px] font-semibold text-ink-2"
+                    />
                     <div>
                       <div>{c.name}</div>
                       <div className="mt-px font-mono text-[11px] font-normal text-ink-2">

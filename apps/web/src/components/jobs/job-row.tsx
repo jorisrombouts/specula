@@ -7,6 +7,7 @@ import type { Mstyle } from "@/lib/tweaks-init";
 import { MatchMeter } from "@/components/atoms/match-meter";
 import { OverlapBar } from "@/components/atoms/overlap-bar";
 import { Tag } from "@/components/atoms/tag";
+import { CompanyLogo } from "@/components/atoms/company-logo";
 
 export function JobRow({
   job,
@@ -84,9 +85,11 @@ export function JobRow({
         </div>
         <div className="mt-[6px] mb-[9px] flex flex-wrap items-center gap-[8px] text-[12.5px]">
           <span className="flex items-center gap-[6px] font-semibold">
-            <span className="flex h-[18px] w-[18px] items-center justify-center rounded-[4px] bg-panel-2 font-mono text-[8.5px] font-semibold text-ink-2">
-              {job.logo}
-            </span>
+            <CompanyLogo
+              src={job.logo}
+              name={job.company}
+              className="flex h-[18px] w-[18px] items-center justify-center rounded-[4px] bg-panel-2 font-mono text-[8.5px] font-semibold text-ink-2"
+            />
             {job.company}
           </span>
           <span className="text-rule-2">/</span>

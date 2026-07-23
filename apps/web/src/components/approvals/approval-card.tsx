@@ -3,6 +3,7 @@ import type { ApprovalDecision } from "@/lib/api/approvals";
 import { Chip } from "@/components/atoms/chip";
 import { Tag } from "@/components/atoms/tag";
 import { Button } from "@/components/atoms/button";
+import { CompanyLogo } from "@/components/atoms/company-logo";
 
 export function ApprovalCard({
   approval: c,
@@ -17,9 +18,11 @@ export function ApprovalCard({
       className="flex flex-col gap-[13px] rounded-[14px] border border-rule bg-card p-[18px_20px] shadow-card"
     >
       <div className="flex items-start gap-[12px]">
-        <div className="flex h-[40px] w-[40px] shrink-0 items-center justify-center rounded-[9px] bg-panel-2 font-mono text-[13px] font-semibold text-ink">
-          {c.logo}
-        </div>
+        <CompanyLogo
+          src={c.logo}
+          name={c.name}
+          className="flex h-[40px] w-[40px] shrink-0 items-center justify-center rounded-[9px] bg-panel-2 font-mono text-[13px] font-semibold text-ink"
+        />
         <div className="flex-1">
           <div className="text-[15px] font-semibold">
             {c.name} <span className="text-[13px]">{c.flag}</span>
