@@ -43,3 +43,4 @@ class LensSummaryOut(CamelModel):
     # DERIVED server-side per request — never stored as columns (§4.3).
     count: int
     is_new: int
+    is_default: bool

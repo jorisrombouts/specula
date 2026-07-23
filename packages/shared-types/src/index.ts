@@ -20,7 +20,7 @@ export interface Lens {
   id: string; name: string; short: string; active: boolean;
   scope: string; modes: Mode[]; origin: string; focus: string; seeds: string[];
 }
-export interface LensSummary extends Lens { count: number; isNew: number }
+export interface LensSummary extends Lens { count: number; isNew: number; isDefault: boolean }
 
 // ⚠ Enum source of truth. Mirrored in apps/api/specula_api/schemas/candidate.py
 // (Mode / Visa / CefrLevel Literals). Keep both in sync.

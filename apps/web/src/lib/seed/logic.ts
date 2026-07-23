@@ -80,6 +80,7 @@ export function deriveLensSummaries(
       ...lens,
       count: pool.length,
       isNew: pool.filter((j) => j.isNew).length,
+      isDefault: lens.id === "all",
     };
   });
 }
