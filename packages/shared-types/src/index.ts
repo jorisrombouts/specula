@@ -54,8 +54,29 @@ export interface Candidate {
   education: EducationEntry[]; languages: LanguageEntry[]; skills: string[];
   projects: ProjectEntry[]; experience: ExperienceEntry[];
 }
+
+export type Seniority =
+  | "Junior"
+  | "Mid"
+  | "Senior"
+  | "Staff"
+  | "Principal"
+  | "Lead"
+  | "Manager"
+  | "Director";
+export const SENIORITY_LEVELS: readonly Seniority[] = [
+  "Junior",
+  "Mid",
+  "Senior",
+  "Staff",
+  "Principal",
+  "Lead",
+  "Manager",
+  "Director",
+];
+
 export interface Targeting {
-  roleTitles: string[]; seniority: string[]; mustHaves: string[];
+  roleTitles: string[]; seniority: Seniority[]; mustHaves: string[];
   avoid: string[]; preferences: string;
 }
 export interface Company {

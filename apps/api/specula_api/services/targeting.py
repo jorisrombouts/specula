@@ -20,4 +20,7 @@ async def upsert_targeting(session: AsyncSession, user_id: UUID, data: Targeting
         setattr(targeting, field, value)
 
     await session.flush()
+    # updated_at is DB-managed (server onupdate); refresh it inside the async greenlet so the
+    # response model can read it without a lazy load (MissingGreenlet on the UPDATE path).
+    await session.refresh(targeting, ["updated_at"])
     return targeting

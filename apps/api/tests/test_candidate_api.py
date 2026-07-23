@@ -176,3 +176,22 @@ async def test_get_candidate_tolerates_legacy_row(migrated_db: None) -> None:
         async with async_session() as s:
             await s.execute(text("DELETE FROM users WHERE id = :uid"), {"uid": str(uid)})
             await s.commit()
+
+
+@requires_db
+async def test_put_candidate_twice_updates_existing_row(migrated_db: None) -> None:
+    # The second PUT hits the UPDATE path; `updated_at`'s server-side onupdate must not
+    # break the response serialization (regression: MissingGreenlet on the expired attr).
+    headers = _auth_header()
+    transport = ASGITransport(app=create_app())
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        assert (
+            await client.put("/api/v1/candidate", json=_VALID_PAYLOAD, headers=headers)
+        ).status_code == 200
+        r2 = await client.put(
+            "/api/v1/candidate",
+            json={**_VALID_PAYLOAD, "headline": "Updated"},
+            headers=headers,
+        )
+        assert r2.status_code == 200, r2.text
+        assert r2.json()["headline"] == "Updated"

@@ -1,0 +1,30 @@
+// Frontend-only suggestion list for the Role-titles typeahead (a <datalist>). NOT a
+// server constraint — any typed value is still accepted (free-add). Helps capture the
+// synonyms a posting's title might use, which feeds the role-match factor.
+export const ROLE_TITLES: string[] = [
+  "Data Scientist",
+  "Senior Data Scientist",
+  "Machine Learning Engineer",
+  "ML Engineer",
+  "Senior ML Engineer",
+  "Staff Machine Learning Engineer",
+  "AI Engineer",
+  "AI Developer",
+  "Applied Scientist",
+  "Research Engineer",
+  "Research Scientist",
+  "Machine Learning Researcher",
+  "Deep Learning Engineer",
+  "MLOps Engineer",
+  "ML Platform Engineer",
+  "Data Engineer",
+  "Analytics Engineer",
+  "NLP Engineer",
+  "Computer Vision Engineer",
+  "LLM Engineer",
+  "Applied ML Engineer",
+  "AI Research Scientist",
+  "Software Engineer, Machine Learning",
+  "Data Science Manager",
+  "Head of Machine Learning",
+];

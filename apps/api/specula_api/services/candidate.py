@@ -22,4 +22,7 @@ async def upsert_candidate(
         setattr(candidate, field, value)
 
     await session.flush()
+    # updated_at is DB-managed (server onupdate); refresh it inside the async greenlet so the
+    # response model can read it without a lazy load (MissingGreenlet on the UPDATE path).
+    await session.refresh(candidate, ["updated_at"])
     return candidate

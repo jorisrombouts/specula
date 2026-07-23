@@ -83,3 +83,31 @@ async def test_cross_tenant_isolation(migrated_db: None) -> None:
         assert get_response.status_code == 200
         body = get_response.json()
         assert body["roleTitles"] == []
+
+
+@requires_db
+async def test_put_targeting_twice_updates_existing_row(migrated_db: None) -> None:
+    # The second PUT hits the UPDATE path; `updated_at`'s server-side onupdate must not
+    # break the response serialization (regression: MissingGreenlet on the expired attr).
+    headers = _auth_header()
+    p1 = {
+        "roleTitles": ["ML Engineer"],
+        "seniority": ["Mid"],
+        "mustHaves": [],
+        "avoid": [],
+        "preferences": "a",
+    }
+    p2 = {
+        "roleTitles": ["ML Engineer", "AI Engineer"],
+        "seniority": ["Senior"],
+        "mustHaves": ["Python"],
+        "avoid": [],
+        "preferences": "b",
+    }
+    transport = ASGITransport(app=create_app())
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        assert (await client.put("/api/v1/targeting", json=p1, headers=headers)).status_code == 200
+        r2 = await client.put("/api/v1/targeting", json=p2, headers=headers)
+        assert r2.status_code == 200, r2.text
+        assert r2.json()["preferences"] == "b"
+        assert r2.json()["seniority"] == ["Senior"]
