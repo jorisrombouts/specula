@@ -46,6 +46,8 @@ def derive_loc(
     factor = base
     if origin_rule == "foreign_hq":
         factor += 8 if (hq and country and hq != country) else -8
+    elif origin_rule == "domestic_hq":
+        factor += 8 if (hq and country and hq == country) else -8
     return _clamp(factor)
 
 

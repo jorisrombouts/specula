@@ -32,6 +32,7 @@ def _summary(lens: Lens, count: int, is_new: int) -> LensSummaryOut:
         seeds=lens.seeds,
         count=count,
         is_new=is_new,
+        is_default=lens.is_default,
     )
 
 

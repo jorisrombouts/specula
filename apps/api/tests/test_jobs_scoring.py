@@ -14,6 +14,11 @@ class TestDeriveLoc:
         local = derive_loc("Remote", "NL", "NL", is_default=False, origin_rule="foreign_hq")
         assert foreign > local
 
+    def test_domestic_hq_lens_rewards_local_hq(self) -> None:
+        local = derive_loc("Remote", "NL", "NL", is_default=False, origin_rule="domestic_hq")
+        foreign = derive_loc("Remote", "NL", "GB", is_default=False, origin_rule="domestic_hq")
+        assert local > foreign
+
     def test_clamped_to_0_100(self) -> None:
         assert 0 <= derive_loc("Remote", "NL", "NL", is_default=True, origin_rule=None) <= 100
 

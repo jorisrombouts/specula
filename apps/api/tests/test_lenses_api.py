@@ -175,3 +175,12 @@ async def test_cross_tenant_isolation(migrated_db: None) -> None:
         assert listed_b.status_code == 200
         names_b = {lens["name"] for lens in listed_b.json()}
         assert names_b == {"All"}  # B sees only its own lazily-created default
+
+
+@requires_db
+async def test_summary_exposes_is_default(migrated_db: None) -> None:
+    transport = ASGITransport(app=create_app())
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        rows = (await client.get("/api/v1/lenses", headers=_auth_header())).json()
+    assert any(r["isDefault"] for r in rows)
+    assert all("isDefault" in r for r in rows)
