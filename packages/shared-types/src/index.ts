@@ -76,7 +76,7 @@ export const SENIORITY_LEVELS: readonly Seniority[] = [
 ];
 
 export interface Targeting {
-  roleTitles: string[]; seniority: string[]; mustHaves: string[];
+  roleTitles: string[]; seniority: Seniority[]; mustHaves: string[];
   avoid: string[]; preferences: string;
 }
 export interface Company {
