@@ -21,6 +21,10 @@ import type { LensPatch } from "@/lib/api/lenses";
 
 const INPUT =
   "w-full rounded-[8px] border border-rule-2 bg-card px-[10px] py-[8px] font-body text-[13px] text-ink focus:border-ink focus:outline-none";
+// Scope-row controls live in a flex row, so they must NOT be `w-full` (which would
+// overflow the cell into the next column). Widths are set per-control instead.
+const FIELD_CTL =
+  "rounded-[8px] border border-rule-2 bg-card px-[10px] py-[8px] font-body text-[13px] text-ink focus:border-ink focus:outline-none";
 
 type EditableLens = {
   name: string;
@@ -106,7 +110,7 @@ export function LensEditor({
           <div className="flex gap-2">
             <select
               aria-label="scope type"
-              className={`${INPUT} w-[104px] flex-none`}
+              className={`${FIELD_CTL} w-[104px] flex-none`}
               value={scope.type}
               onChange={(e) => setScopeType(e.target.value as ScopeType)}
             >
@@ -121,7 +125,7 @@ export function LensEditor({
             ) : scope.type === "Region" ? (
               <select
                 aria-label="scope value"
-                className={`${INPUT} flex-1`}
+                className={`${FIELD_CTL} min-w-0 flex-1`}
                 value={scope.value}
                 onChange={(e) =>
                   setScope({ type: "Region", value: e.target.value })
@@ -134,7 +138,7 @@ export function LensEditor({
             ) : scope.type === "Country" ? (
               <select
                 aria-label="scope value"
-                className={`${INPUT} flex-1`}
+                className={`${FIELD_CTL} min-w-0 flex-1`}
                 value={scope.value}
                 onChange={(e) =>
                   setScope({ type: "Country", value: e.target.value })
@@ -149,7 +153,7 @@ export function LensEditor({
             ) : (
               <input
                 aria-label="scope value"
-                className={`${INPUT} flex-1`}
+                className={`${FIELD_CTL} min-w-0 flex-1`}
                 placeholder="City, CC — e.g. Berlin, DE"
                 value={scope.value}
                 onChange={(e) =>
