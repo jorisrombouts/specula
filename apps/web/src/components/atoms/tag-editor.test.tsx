@@ -26,3 +26,27 @@ describe("TagEditor", () => {
     expect(onChange).toHaveBeenCalledWith(["Python", "vLLM"]);
   });
 });
+
+describe("TagEditor suggestions", () => {
+  it("wires a datalist and still accepts a free-add value not in the list", () => {
+    const onChange = vi.fn();
+    render(
+      <TagEditor
+        values={["Python"]}
+        onChange={onChange}
+        suggestions={["Kubernetes", "Go"]}
+      />,
+    );
+    fireEvent.click(screen.getByText("+ add"));
+    const input = document.activeElement as HTMLInputElement;
+    expect(input).toHaveAttribute("list");
+    const listId = input.getAttribute("list")!;
+    expect(
+      document.getElementById(listId)?.querySelectorAll("option").length,
+    ).toBe(2);
+    // free-add: a value NOT in suggestions is still accepted
+    fireEvent.change(input, { target: { value: "Mojo" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(onChange).toHaveBeenCalledWith(["Python", "Mojo"]);
+  });
+});
