@@ -100,4 +100,56 @@ describe("ProfilesView", () => {
     expect(body.scope).toBe("ES");
     fetchMock.mockRestore();
   });
+
+  it("+ New profile then Save creates via POST and shows the new card", async () => {
+    const created = {
+      id: "srv-1",
+      name: "Amsterdam",
+      short: "Amsterdam",
+      active: true,
+      scope: "Amsterdam, NL",
+      modes: ["Remote"],
+      origin: "",
+      focus: "",
+      seeds: [],
+      count: 0,
+      isNew: 0,
+      isDefault: false,
+    };
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(
+        new Response(JSON.stringify(created), { status: 201 }),
+      );
+    render(<ProfilesView lenses={lenses} />);
+    fireEvent.click(screen.getByText("+ New profile"));
+    fireEvent.change(screen.getByLabelText("profile name"), {
+      target: { value: "Amsterdam" },
+    });
+    fireEvent.click(screen.getByText("Save profile"));
+    await screen.findByText("Amsterdam");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/lenses",
+      expect.objectContaining({ method: "POST" }),
+    );
+    fetchMock.mockRestore();
+  });
+
+  it("Delete removes the card and calls DELETE", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(null, { status: 204 }));
+    const { container } = render(<ProfilesView lenses={lenses} />);
+    const spain = container.querySelector('[data-lens="spain"]') as HTMLElement;
+    fireEvent.click(within(spain).getByText("Edit"));
+    fireEvent.click(screen.getByText("Delete"));
+    await waitFor(() =>
+      expect(container.querySelector('[data-lens="spain"]')).toBeNull(),
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/api/lenses/spain"),
+      expect.objectContaining({ method: "DELETE" }),
+    );
+    fetchMock.mockRestore();
+  });
 });

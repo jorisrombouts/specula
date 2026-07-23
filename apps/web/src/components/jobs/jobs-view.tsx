@@ -11,6 +11,7 @@ import type {
 import { flipDelta } from "@/lib/flip";
 import { usePrefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
 import { useTweaks } from "@/lib/tweaks";
+import { originLabel } from "@/lib/lens-catalog";
 import { LensBar } from "@/components/jobs/lens-bar";
 import { JobRow } from "@/components/jobs/job-row";
 import { JobDrawer } from "@/components/jobs/job-drawer";
@@ -182,7 +183,7 @@ export function JobsView({
         <div className="flex items-center gap-[14px]">
           <span className="text-ink">{activeLens.scope}</span>
           <span>· {activeLens.modes.join(" / ")}</span>
-          <span>· {activeLens.origin}</span>
+          <span>· {originLabel(activeLens.origin)}</span>
           {lens !== defaultLensId && (
             <span className="text-accent-ink">
               · ◉ match re-scored for this lens
