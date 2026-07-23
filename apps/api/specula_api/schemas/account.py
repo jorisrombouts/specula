@@ -20,11 +20,11 @@ class CamelModel(BaseModel):
 class CandidateExport(CamelModel):
     headline: str | None
     location: str | None
-    work_mode: str | None
+    work_mode: list[str]
     visa: str | None
     years: int | None
-    education: str | None
-    languages: list[str]
+    education: list[Any]
+    languages: list[Any]
     skills: list[str]
     projects: list[Any]
     experience: list[Any]

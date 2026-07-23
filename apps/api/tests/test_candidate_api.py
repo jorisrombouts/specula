@@ -31,71 +31,80 @@ async def test_get_candidate_for_fresh_user_returns_empty_defaults(migrated_db: 
     body = response.json()
     assert body["headline"] is None
     assert body["location"] is None
-    assert body["workMode"] is None
+    assert body["workMode"] == []
     assert body["visa"] is None
     assert body["years"] is None
-    assert body["education"] is None
+    assert body["education"] == []
     assert body["languages"] == []
     assert body["skills"] == []
     assert body["projects"] == []
     assert body["experience"] == []
 
 
-@requires_db
-async def test_put_candidate_persists_and_echoes_camelcase(migrated_db: None) -> None:
-    headers = _auth_header()
-    payload = {
-        "headline": "ML Engineer",
-        "location": "Berlin",
-        "workMode": "Remote",
-        "visa": "EU citizen",
-        "years": 7,
-        "education": "MSc Computer Science",
-        "languages": ["English", "German"],
-        "skills": ["Python", "PyTorch"],
-        "projects": [{"name": "Specula", "note": "role ledger"}],
-        "experience": [{"role": "ML Eng", "org": "Acme", "period": "2021-2024"}],
-    }
+_VALID_PAYLOAD = {
+    "headline": "ML Engineer",
+    "location": "Berlin",
+    "workMode": ["Remote", "Hybrid"],
+    "visa": "Require visa sponsorship",
+    "years": 7,
+    "education": [
+        {"degree": "MSc", "field": "CS", "institution": "TU Berlin", "year": 2018},
+    ],
+    "languages": [{"language": "English", "level": "C2"}],
+    "skills": ["Python", "PyTorch"],
+    "projects": [{"name": "Specula", "note": "role ledger"}],
+    "experience": [
+        {"role": "ML Eng", "org": "Acme", "startYear": 2021, "endYear": None},
+    ],
+}
 
+
+@requires_db
+async def test_put_candidate_persists_structured_shapes(migrated_db: None) -> None:
+    headers = _auth_header()
     transport = ASGITransport(app=create_app())
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        put_response = await client.put("/api/v1/candidate", json=payload, headers=headers)
+        put_response = await client.put("/api/v1/candidate", json=_VALID_PAYLOAD, headers=headers)
         assert put_response.status_code == 200
         put_body = put_response.json()
-        for key, value in payload.items():
+        for key, value in _VALID_PAYLOAD.items():
             assert put_body[key] == value
 
-        get_response = await client.get("/api/v1/candidate", headers=headers)
-        assert get_response.status_code == 200
-        get_body = get_response.json()
-        for key, value in payload.items():
+        get_body = (await client.get("/api/v1/candidate", headers=headers)).json()
+        for key, value in _VALID_PAYLOAD.items():
             assert get_body[key] == value
+
+
+@requires_db
+async def test_put_candidate_rejects_out_of_set_values(migrated_db: None) -> None:
+    transport = ASGITransport(app=create_app())
+    bad_bodies = [
+        {**_VALID_PAYLOAD, "visa": "not a real option"},
+        {**_VALID_PAYLOAD, "workMode": ["Telepathy"]},
+        {**_VALID_PAYLOAD, "languages": [{"language": "English", "level": "Z9"}]},
+        {
+            **_VALID_PAYLOAD,
+            "experience": [{"role": "r", "org": "o", "startYear": 1000, "endYear": 2020}],
+        },
+    ]
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        for body in bad_bodies:
+            resp = await client.put("/api/v1/candidate", json=body, headers=_auth_header())
+            assert resp.status_code == 422, body
 
 
 @requires_db
 async def test_cross_tenant_isolation(migrated_db: None) -> None:
     user_a_headers = _auth_header()
     user_b_headers = _auth_header()
-    payload = {
-        "headline": "ML Engineer",
-        "location": "Berlin",
-        "workMode": "Remote",
-        "visa": None,
-        "years": 7,
-        "education": None,
-        "languages": [],
-        "skills": ["Python"],
-        "projects": [],
-        "experience": [],
-    }
 
     transport = ASGITransport(app=create_app())
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        put_response = await client.put("/api/v1/candidate", json=payload, headers=user_a_headers)
+        put_response = await client.put(
+            "/api/v1/candidate", json=_VALID_PAYLOAD, headers=user_a_headers
+        )
         assert put_response.status_code == 200
 
-        get_response = await client.get("/api/v1/candidate", headers=user_b_headers)
-        assert get_response.status_code == 200
-        body = get_response.json()
+        body = (await client.get("/api/v1/candidate", headers=user_b_headers)).json()
         assert body["headline"] is None
         assert body["skills"] == []
