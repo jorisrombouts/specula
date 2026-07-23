@@ -90,4 +90,21 @@ describe("LensEditor", () => {
     expect(onCancel).toHaveBeenCalled();
     expect(onDelete).toHaveBeenCalled();
   });
+
+  it("gates Save on dirty (disabled when clean, enabled after an edit)", () => {
+    render(
+      <LensEditor
+        lens={lens}
+        onSave={() => {}}
+        onCancel={() => {}}
+        onDelete={() => {}}
+      />,
+    );
+    const save = screen.getByText("Save profile");
+    expect(save).toBeDisabled();
+    fireEvent.change(screen.getByLabelText("focus"), {
+      target: { value: "Madrid, Barcelona" },
+    });
+    expect(save).not.toBeDisabled();
+  });
 });

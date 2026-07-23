@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import type { Mode } from "@specula/shared-types";
 import { WORK_MODES } from "@specula/shared-types";
 import { ChipMultiSelect } from "@/components/atoms/chip-multi-select";
@@ -63,16 +63,13 @@ export function LensEditor({
     active: lens.active,
   });
 
-  const initial = useMemo(
-    () => JSON.stringify(parseScope(lens.scope)) + lens.name,
-    [],
-  );
-  const dirty =
-    JSON.stringify(scope) + name !== initial ||
-    modes.join() !== lens.modes.join() ||
-    origin !== lens.origin ||
-    focus !== lens.focus ||
-    seeds.join() !== lens.seeds.join();
+  // Dirty via one serialized snapshot captured once (lazy initial state). JSON of the array
+  // is collision-free — unlike join(), where a comma inside a seed/focus value could hide a
+  // real edit and wrongly disable Save.
+  const snapshot = (): string =>
+    JSON.stringify([name, scope, modes, origin, focus, seeds]);
+  const [initialSnapshot] = useState(snapshot);
+  const dirty = snapshot() !== initialSnapshot;
   const canSave = name.trim() !== "" && (isNew || dirty);
 
   const setScopeType = (type: ScopeType) => {
