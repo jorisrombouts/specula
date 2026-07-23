@@ -411,20 +411,22 @@ async def test_why_is_written_by_the_model(db_session: AsyncSession) -> None:
 
 
 @requires_db
-async def test_why_falls_back_to_the_template_when_the_model_fails(
+async def test_description_is_blank_when_the_model_fails(
     db_session: AsyncSession,
 ) -> None:
-    """A staged approval with a plain why beats a discovery run that dies on a prose call."""
+    """A dead description call degrades to a blank, not a guess: the card then shows just the
+    company name and careers link, never a fabricated 'what they do'."""
     approvals = await _discover_two(db_session, _StubOpenAI({}, whys=None))
 
-    assert all(a.why is not None and a.why.startswith("Surfaced by the search") for a in approvals)
+    assert all(a.why == "" for a in approvals)
 
 
 @requires_db
-async def test_why_falls_back_when_the_model_returns_the_wrong_count(
+async def test_description_is_blank_when_the_model_returns_the_wrong_count(
     db_session: AsyncSession,
 ) -> None:
-    """Zipping a short list would silently mis-attribute one company's why to another."""
+    """A short list would silently mis-attribute one company's description to another, so a
+    count mismatch blanks every description rather than zipping them out of order."""
     approvals = await _discover_two(db_session, _StubOpenAI({}, whys=["only one sentence"]))
 
-    assert all(a.why is not None and a.why.startswith("Surfaced by the search") for a in approvals)
+    assert all(a.why == "" for a in approvals)

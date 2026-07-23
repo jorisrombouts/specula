@@ -92,6 +92,7 @@ async def test_list_returns_only_undecided_mapped_to_camelcase(migrated_db: None
     assert row["flag"] == "🇳🇱"
     assert row["query"] == "machine learning amsterdam scaleup"
     assert row["why"] == "NL-local ML team."
+    assert row["careersUrl"] == "https://boards.greenhouse.io/lighthouse"
     assert row["roles"] == 3
     assert row["unverified"] is False
 

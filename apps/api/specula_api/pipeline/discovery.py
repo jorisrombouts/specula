@@ -124,7 +124,9 @@ async def discover(
             staged.append(candidate)
             new += 1
 
-    for candidate, why in zip(staged, await _resolve_whys(staged, deps), strict=True):
+    for candidate, description in zip(
+        staged, await _resolve_descriptions(staged, deps), strict=True
+    ):
         session.add(
             Approval(
                 user_id=user_id,
@@ -134,7 +136,7 @@ async def discover(
                 logo_url=favicon_url(candidate.domain),
                 ats=candidate.ats,
                 found_query=candidate.found_query,
-                why=why,
+                why=description,
                 decision=None,
             )
         )
@@ -183,33 +185,26 @@ def _path_token(path: str) -> str | None:
     return segment.lower() if segment else None
 
 
-def _derive_why(candidate: _Candidate) -> str:
-    """Fallback when the model can't be reached or answers with the wrong shape."""
-    return f'Surfaced by the search "{candidate.found_query}" as "{candidate.name}".'
-
-
 def _describe(candidate: _Candidate) -> str:
-    parts = [candidate.name, f"domain {candidate.domain}"]
-    if candidate.ats:
-        parts.append(f"ATS {candidate.ats}")
-    parts.append(f'found by searching "{candidate.found_query}"')
-    return "; ".join(parts)
+    """One line identifying a company for the description model: its name and domain, and
+    nothing about the search that surfaced it — feeding the query made the model restate it
+    ("X offers ML roles in Spain") instead of saying what the company actually does."""
+    return f"{candidate.name} (domain {candidate.domain})"
 
 
-async def _resolve_whys(candidates: list[_Candidate], deps: PipelineDeps) -> list[str]:
-    """An LLM-written `why` per staged approval (spec §7.2), batched into ONE call.
-
-    Discovery stages 20+ candidates per run, so a call each would dominate the run's cost for
-    one sentence apiece. Any failure — unreachable model, wrong number of sentences, a blank —
-    degrades to the templated sentence for that candidate: a staged approval with a plain why
-    is much better than a failed discovery run.
+async def _resolve_descriptions(candidates: list[_Candidate], deps: PipelineDeps) -> list[str]:
+    """One factual sentence per staged approval describing what the company does (spec §7.2),
+    batched into ONE call. The model returns a blank for any company it doesn't recognize —
+    discovery is pre-crawl, so the only signal is the name/domain, and an honest "" (the card
+    shows just the careers link) beats a guessed description a user would approve or reject on.
+    Any failure — unreachable model, wrong count — blanks every description for the same reason.
     """
     if not candidates:
         return []
     try:
-        whys = await deps.openai.approval_whys([_describe(c) for c in candidates])
+        descriptions = await deps.openai.approval_whys([_describe(c) for c in candidates])
     except Exception:
-        whys = []
-    if len(whys) != len(candidates):
-        return [_derive_why(c) for c in candidates]
-    return [why.strip() or _derive_why(c) for why, c in zip(whys, candidates, strict=True)]
+        descriptions = []
+    if len(descriptions) != len(candidates):
+        return ["" for _ in candidates]
+    return [description.strip() for description in descriptions]

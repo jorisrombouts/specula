@@ -264,10 +264,11 @@ class OpenAIResponsesClient:
         return response.choices[0].message.content or ""
 
     async def approval_whys(self, descriptions: Sequence[str]) -> list[str]:
-        """Why each discovered company is worth a look — batched into a single call.
+        """One factual sentence per discovered company describing what it does — batched into a
+        single call. Blank for any company the model doesn't recognize: discovery is pre-crawl,
+        so the only signal is the name/domain, and a guessed description is worse than none.
 
-        Discovery stages 20+ candidates per run; one call each would dominate the run's cost
-        for a single sentence apiece.
+        Discovery stages 20+ candidates per run; one call each would dominate the run's cost.
         """
         self.last_usage = None
         if not descriptions:
@@ -277,9 +278,11 @@ class OpenAIResponsesClient:
             model=self._settings.openai_rationale_model,
             result_type=ApprovalWhys,
             system=(
-                "For each numbered company below, write ONE short sentence on why it is worth "
-                "reviewing for a job search, grounded only in what is given. Return exactly as "
-                "many sentences as there are companies, in the same order. Do not invent facts."
+                "For each numbered company below, write ONE short, factual sentence describing "
+                "what the company does — its product, service, or industry — using only "
+                "well-known public knowledge. If you do not recognize the company or are not "
+                "confident, return an empty string for that item; never guess or invent facts. "
+                "Return exactly one item per company, in the same order."
             ),
             user=numbered,
         )

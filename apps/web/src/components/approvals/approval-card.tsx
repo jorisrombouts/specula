@@ -28,12 +28,30 @@ export function ApprovalCard({
             {c.name} <span className="text-[13px]">{c.flag}</span>
           </div>
           <div className="mt-[2px] font-mono text-[11px] text-ink-2">
-            {c.domain}
+            {c.careersUrl ? (
+              <a
+                href={c.careersUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="text-accent hover:underline"
+              >
+                {c.domain}
+              </a>
+            ) : (
+              c.domain
+            )}
+            {c.careersUrl ? (
+              <span className="ml-1 text-ink-3" aria-hidden>
+                ↗
+              </span>
+            ) : null}
           </div>
         </div>
         <Chip mono>{c.roles} open</Chip>
       </div>
-      <p className="text-[12.5px] leading-[1.5] text-ink-2">{c.why}</p>
+      {c.why ? (
+        <p className="text-[12.5px] leading-[1.5] text-ink-2">{c.why}</p>
+      ) : null}
       <div className="flex flex-wrap gap-[7px]">
         <span className="rounded-[5px] bg-panel-2 px-[8px] py-[3px] font-mono text-[11px] text-ink">
           {c.ats}

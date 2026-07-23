@@ -86,7 +86,8 @@ export interface Company {
 }
 export interface Approval {
   id: string; name: string; logo: string; domain: string; ats: string;
-  hq: string; flag: string; query: string; why: string; roles: number;
+  hq: string; flag: string; query: string; why: string;
+  careersUrl: string | null; roles: number;
   unverified?: boolean;
 }
 export interface SkillDemand { skill: string; pct: number; delta: number; up: boolean; gap?: boolean }

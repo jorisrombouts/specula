@@ -111,6 +111,20 @@ describe("ApprovalCard", () => {
     ).toBeInTheDocument();
   });
 
+  it("links the domain to the careers page in a new tab", () => {
+    render(<ApprovalCard approval={verified} />);
+    const link = screen.getByRole("link");
+    expect(link).toHaveAttribute("href", verified.careersUrl!);
+    expect(link).toHaveAttribute("target", "_blank");
+  });
+
+  it("hides the description paragraph when the company blurb is blank", () => {
+    const { container } = render(
+      <ApprovalCard approval={{ ...verified, why: "" }} />,
+    );
+    expect(container.querySelector("p")).toBeNull();
+  });
+
   it("shows the HQ chip for a verified approval", () => {
     render(<ApprovalCard approval={verified} />);
     expect(screen.getByText(`HQ ${verified.hq}`)).toBeInTheDocument();

@@ -31,6 +31,7 @@ class ApprovalOut(CamelModel):
     flag: str
     query: str | None
     why: str | None
+    careers_url: str | None
     roles: int
     unverified: bool
 
@@ -46,6 +47,7 @@ class ApprovalOut(CamelModel):
             flag=_flag(a.hq_country),
             query=a.found_query,
             why=a.why,
+            careers_url=a.careers_url,
             roles=a.open_roles or 0,
             unverified=a.hq_confidence is None or a.hq_confidence < _HQ_CONFIDENCE_THRESHOLD,
         )
