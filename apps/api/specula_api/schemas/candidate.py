@@ -59,7 +59,43 @@ class CandidateIn(CamelModel):
     experience: list[ExperienceEntry] = []
 
 
-class CandidateOut(CandidateIn):
+# ---- Read model (GET /candidate) --------------------------------------------
+# The read path must tolerate values written before these enums existed, or left by a
+# rollback: strict Literals here would make a legacy profile UNREADABLE (500) rather than
+# merely un-resavable. So reads are lenient/best-effort (plain str, no year bound) while
+# writes stay strict (CandidateIn). Matches the product rule: legacy data is surfaced,
+# not trusted. Kept a standalone model (not `CandidateIn` subclass) so overriding the
+# enum fields with wider types doesn't trip mypy's invariant-attribute checks.
+class LanguageEntryOut(CamelModel):
+    language: str = ""
+    level: str = ""
+
+
+class EducationEntryOut(CamelModel):
+    degree: str = ""
+    field: str = ""
+    institution: str = ""
+    year: int | None = None
+
+
+class ExperienceEntryOut(CamelModel):
+    role: str = ""
+    org: str = ""
+    start_year: int | None = None
+    end_year: int | None = None
+
+
+class CandidateOut(CamelModel):
     model_config = ConfigDict(from_attributes=True)
 
+    headline: str | None = None
+    location: str | None = None
+    work_mode: list[str] = []
+    visa: str | None = None
+    years: int | None = None
+    education: list[EducationEntryOut] = []
+    languages: list[LanguageEntryOut] = []
+    skills: list[str] = []
+    projects: list[ProjectEntry] = []
+    experience: list[ExperienceEntryOut] = []
     updated_at: datetime

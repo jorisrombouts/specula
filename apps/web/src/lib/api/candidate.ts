@@ -7,15 +7,18 @@ import type {
   ProjectEntry,
   Visa,
 } from "@specula/shared-types";
+import { VISA_OPTIONS, WORK_MODES } from "@specula/shared-types";
 import { bffFetch } from "@/lib/api/bff";
 
-// Shape of FastAPI's `CandidateOut` (camelCased). `candidate_profiles` has no
-// name/initials/title columns — `headline` is the profile's freeform title.
+// Shape of FastAPI's `CandidateOut` (camelCased). The read model is lenient — it can
+// surface legacy / pre-enum values (e.g. a `visa` free-text string or an out-of-set
+// work mode) rather than 500ing — so `workMode`/`visa` are plain strings here and are
+// sanitized below.
 type CandidateApiOut = {
   headline: string | null;
   location: string | null;
-  workMode: Mode[];
-  visa: Visa | null;
+  workMode: string[];
+  visa: string | null;
   years: number | null;
   education: EducationEntry[];
   languages: LanguageEntry[];
@@ -34,8 +37,15 @@ export async function getCandidate(): Promise<Candidate> {
     initials: "",
     title: api.headline ?? "",
     location: api.location ?? "",
-    workMode: api.workMode,
-    visa: api.visa ?? "",
+    // Sanitize legacy/out-of-enum reads to the strict client types: drop unknown work
+    // modes, and show an unknown visa as unset ("") so the controlled inputs get valid
+    // values and the user simply re-picks.
+    workMode: api.workMode.filter((m): m is Mode =>
+      (WORK_MODES as readonly string[]).includes(m),
+    ),
+    visa: (VISA_OPTIONS as readonly string[]).includes(api.visa ?? "")
+      ? (api.visa as Visa)
+      : "",
     years: api.years ?? 0,
     education: api.education,
     languages: api.languages,

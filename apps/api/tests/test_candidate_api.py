@@ -1,12 +1,17 @@
 import uuid
+from datetime import UTC, datetime
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import text
 from test_db import requires_db
 
 from specula_api.auth import mint
 from specula_api.config import settings
+from specula_api.db.models import CandidateProfile, User
+from specula_api.db.session import async_session, tenant_session
 from specula_api.main import create_app
+from specula_api.schemas.candidate import CandidateOut
 
 
 @pytest.fixture(autouse=True)
@@ -108,3 +113,66 @@ async def test_cross_tenant_isolation(migrated_db: None) -> None:
         body = (await client.get("/api/v1/candidate", headers=user_b_headers)).json()
         assert body["headline"] is None
         assert body["skills"] == []
+
+
+def test_candidate_out_tolerates_legacy_out_of_enum_values() -> None:
+    # The READ model must never 500 on values written before these enums existed (or left
+    # by a rollback). Strict Literals belong on writes (CandidateIn); reads are lenient.
+    out = CandidateOut.model_validate(
+        {
+            "headline": None,
+            "location": None,
+            "work_mode": ["Remote, Hybrid, On-site"],  # not a valid Mode
+            "visa": "EU visa",  # legacy free-text, not a Visa option
+            "years": None,
+            "education": [{"degree": "", "field": "AI", "institution": "", "year": None}],
+            "languages": [{"language": "English", "level": ""}],  # "" not a CefrLevel
+            "skills": [],
+            "projects": [],
+            "experience": [],
+            "updated_at": datetime.now(UTC),
+        }
+    )
+    assert out.visa == "EU visa"
+    assert out.work_mode == ["Remote, Hybrid, On-site"]
+    assert out.languages[0].level == ""
+
+
+@requires_db
+async def test_get_candidate_tolerates_legacy_row(migrated_db: None) -> None:
+    # A profile saved by the pre-enum UI must stay READABLE: GET must surface it, not 500.
+    sub = f"test-sub-{uuid.uuid4()}"
+    token = mint(sub=sub, email=f"{uuid.uuid4()}@example.com", name="Legacy User")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    async with async_session() as s:
+        user = User(email=f"{uuid.uuid4()}@example.com", google_sub=sub)
+        s.add(user)
+        await s.commit()
+        uid = user.id
+
+    async with tenant_session(uid) as s:
+        s.add(
+            CandidateProfile(
+                user_id=uid,
+                work_mode=["Remote, Hybrid, On-site"],  # corrupted single element
+                visa="EU visa",  # legacy free-text, not a Visa option
+                languages=[{"language": "English", "level": ""}],  # "" not a CefrLevel
+                education=[],
+                experience=[],
+            )
+        )
+
+    try:
+        transport = ASGITransport(app=create_app())
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get("/api/v1/candidate", headers=headers)
+        assert resp.status_code == 200  # must NOT 500 on legacy / out-of-enum data
+        body = resp.json()
+        assert body["visa"] == "EU visa"
+        assert body["workMode"] == ["Remote, Hybrid, On-site"]
+        assert body["languages"][0]["level"] == ""
+    finally:
+        async with async_session() as s:
+            await s.execute(text("DELETE FROM users WHERE id = :uid"), {"uid": str(uid)})
+            await s.commit()
