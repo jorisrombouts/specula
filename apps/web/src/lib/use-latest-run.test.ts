@@ -84,8 +84,8 @@ describe("useLatestRun", () => {
     expect(fetchMock.mock.calls.length).toBe(callsAfterDone);
   });
 
-  it("stops triggering (without polling) when the trigger POST itself fails", async () => {
-    triggerRun.mockRejectedValue(new Error("boom"));
+  it("surfaces the error (and stops, without polling) when the trigger POST fails", async () => {
+    triggerRun.mockRejectedValue(new Error("Rate-limited — try again in 42s."));
     const { result } = renderHook(() => useLatestRun(null));
 
     await act(async () => {
@@ -94,6 +94,7 @@ describe("useLatestRun", () => {
 
     expect(result.current.triggering).toBe(false);
     expect(result.current.run).toBeNull();
+    expect(result.current.error).toBe("Rate-limited — try again in 42s.");
   });
 
   it("cleans up the poll interval on unmount", async () => {

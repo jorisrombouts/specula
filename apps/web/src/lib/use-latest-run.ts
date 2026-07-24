@@ -14,10 +14,12 @@ const POLL_MS = 3000;
 export function useLatestRun(initialRun: Run | null): {
   run: Run | null;
   triggering: boolean;
+  error: string | null;
   trigger: () => Promise<void>;
 } {
   const [run, setRun] = useState<Run | null>(initialRun);
   const [triggering, setTriggering] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const router = useRouter();
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -34,10 +36,12 @@ export function useLatestRun(initialRun: Run | null): {
   const trigger = useCallback(async () => {
     if (triggering) return;
     stopPolling();
+    setError(null);
     setTriggering(true);
     try {
       setRun(await postRun());
-    } catch {
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Sync failed.");
       setTriggering(false);
       return;
     }
@@ -62,5 +66,5 @@ export function useLatestRun(initialRun: Run | null): {
     }, POLL_MS);
   }, [router, stopPolling, triggering]);
 
-  return { run, triggering, trigger };
+  return { run, triggering, error, trigger };
 }

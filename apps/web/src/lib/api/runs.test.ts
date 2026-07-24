@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 
 vi.mock("@/lib/api/bff", async () => {
-  const { mockBffFetch } = await import("@/lib/api/test-fixtures");
-  return { bffFetch: mockBffFetch };
+  const { mockBffFetch, mockBffFetchRaw } =
+    await import("@/lib/api/test-fixtures");
+  return { bffFetch: mockBffFetch, bffFetchRaw: mockBffFetchRaw };
 });
 
 const { getLatestRun, getRun, triggerRun } = await import("@/lib/api/runs");
@@ -59,13 +60,25 @@ describe("triggerRun (client)", () => {
     expect(run.status).toBe("queued");
   });
 
-  it("throws on a non-ok response", async () => {
+  it("surfaces a rate-limit (429) with the retry delay from the body", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 429,
+        json: async () => ({ error: "rate_limited", retryAfterS: 42 }),
+      }),
+    );
+    await expect(triggerRun()).rejects.toThrow("try again in 42s");
+  });
+
+  it("surfaces a non-429 failure with its status", async () => {
     vi.stubGlobal(
       "fetch",
       vi
         .fn()
         .mockResolvedValue({ ok: false, status: 500, json: async () => ({}) }),
     );
-    await expect(triggerRun()).rejects.toThrow();
+    await expect(triggerRun()).rejects.toThrow("Sync failed (500)");
   });
 });

@@ -22,7 +22,7 @@ function relative(finishedAt: string, now: number): string {
 // The sidebar's sync/refresh affordance: shows when the latest run finished
 // (and how many new postings it found), and lets the user trigger a new one.
 export function SyncStatus({ initialRun }: { initialRun: Run | null }) {
-  const { run, triggering, trigger } = useLatestRun(initialRun);
+  const { run, triggering, error, trigger } = useLatestRun(initialRun);
   // `now` is read once, at mount, via useState's lazy initializer — never
   // called inline during render, which React disallows as an impure read. A
   // pinned clock (page.clock.setFixedTime) makes this and `relative()` fully
@@ -92,6 +92,14 @@ export function SyncStatus({ initialRun }: { initialRun: Run | null }) {
         </span>{" "}
         {busy ? "Syncing…" : "Refresh now"}
       </button>
+      {error ? (
+        <div
+          role="alert"
+          className="font-mono text-[11px] leading-snug text-warn"
+        >
+          {error}
+        </div>
+      ) : null}
     </div>
   );
 }

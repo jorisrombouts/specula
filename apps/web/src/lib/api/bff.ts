@@ -28,10 +28,7 @@ async function resolveIdentity(): Promise<Identity | null> {
 // and calls FastAPI with it. The browser never calls FastAPI directly — only the Next
 // server (route handlers / server components) does. The claim contract (alg / secret /
 // iss / aud / sub=google_sub) must match FastAPI's `auth.py`.
-export async function bffFetch<T = unknown>(
-  path: string,
-  init?: RequestInit,
-): Promise<T> {
+async function bffRequest(path: string, init?: RequestInit): Promise<Response> {
   const identity = await resolveIdentity();
   if (!identity) throw new Error("bffFetch: no authenticated session");
 
@@ -52,7 +49,7 @@ export async function bffFetch<T = unknown>(
     .sign(secret);
 
   const base = process.env.API_URL ?? "http://localhost:8000";
-  const res = await fetch(`${base}/api/v1${path}`, {
+  return fetch(`${base}/api/v1${path}`, {
     ...init,
     headers: {
       Authorization: `Bearer ${token}`,
@@ -61,10 +58,28 @@ export async function bffFetch<T = unknown>(
     },
     cache: "no-store",
   });
+}
+
+// Throws on a non-2xx response — the right default for most routes.
+export async function bffFetch<T = unknown>(
+  path: string,
+  init?: RequestInit,
+): Promise<T> {
+  const res = await bffRequest(path, init);
   if (!res.ok) {
     throw new Error(
       `bffFetch ${init?.method ?? "GET"} ${path} → ${res.status}`,
     );
   }
   return res.status === 204 ? (undefined as T) : ((await res.json()) as T);
+}
+
+// Like bffFetch but returns the raw Response without throwing on non-2xx, so a route can
+// forward FastAPI's real status + body to the client (e.g. a 429 rate-limit the user should
+// see) instead of collapsing every failure into an opaque 500.
+export async function bffFetchRaw(
+  path: string,
+  init?: RequestInit,
+): Promise<Response> {
+  return bffRequest(path, init);
 }

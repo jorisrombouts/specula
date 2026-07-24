@@ -156,3 +156,17 @@ export async function mockBffFetch<T = unknown>(
   }
   throw new Error(`mockBffFetch: no fixture for path "${path}"`);
 }
+
+// Raw-Response variant for routes that use bffFetchRaw (e.g. the runs trigger, which forwards
+// the API's real status). Wraps the parsed fixture in a Response with a plausible status.
+export async function mockBffFetchRaw(
+  path: string,
+  init?: RequestInit,
+): Promise<Response> {
+  const data = await mockBffFetch(path, init);
+  const status = init?.method === "POST" ? 201 : 200;
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
