@@ -11,17 +11,20 @@ import {
 export function ApprovalsView({ approvals }: { approvals: Approval[] }) {
   const [queue, setQueue] = useState(approvals);
   const [approved, setApproved] = useState(0);
+  const [error, setError] = useState<string | null>(null);
 
   // Optimistically drop the card; the "N approved" header stays DERIVED from
-  // decisions made. Roll back if the decision fails to persist.
+  // decisions made. Roll back AND surface why if the decision fails to persist.
   async function decide(approval: Approval, decision: ApprovalDecision) {
+    setError(null);
     setQueue((q) => q.filter((a) => a.id !== approval.id));
     if (decision === "approve") setApproved((n) => n + 1);
     try {
       await postApprovalDecision(approval.id, decision);
-    } catch {
+    } catch (e) {
       setQueue((q) => [approval, ...q]);
       if (decision === "approve") setApproved((n) => n - 1);
+      setError(e instanceof Error ? e.message : "Action failed.");
     }
   }
 
@@ -54,6 +57,12 @@ export function ApprovalsView({ approvals }: { approvals: Approval[] }) {
           </div>
         </div>
       </header>
+
+      {error ? (
+        <div role="alert" className="mt-[16px] font-mono text-[12px] text-warn">
+          {error}
+        </div>
+      ) : null}
 
       {queue.length === 0 ? (
         <div className="px-[20px] py-[80px] text-center text-ink-2">

@@ -93,6 +93,37 @@ def test_limits_are_per_user() -> None:
     limiter.check(b, per_hour=1, cooldown_s=60, now=1.0)  # b unaffected
 
 
+# --- run vs ingest buckets ----------------------------------------------------
+
+
+def test_ingest_gate_has_no_cooldown(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Approvals must not be throttled by a cooldown — two ingests at the same instant both
+    pass (a run would 429 on the second)."""
+    ratelimit._limiter.clear()
+    monkeypatch.setattr(settings, "ingest_rate_limit_per_hour", 100)
+    monkeypatch.setattr(ratelimit, "_clock", lambda: 100.0)  # frozen: same instant
+    user = _uid()
+    ratelimit.enforce_ingest_rate_limit(user)
+    ratelimit.enforce_ingest_rate_limit(user)  # no cooldown -> does not raise
+
+
+def test_run_and_ingest_are_separate_buckets(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Runs and ingests have independent budgets — recently hitting Refresh must not block
+    approving companies, and each is capped on its own."""
+    ratelimit._limiter.clear()
+    monkeypatch.setattr(settings, "run_rate_limit_per_hour", 1)
+    monkeypatch.setattr(settings, "run_cooldown_s", 0)
+    monkeypatch.setattr(settings, "ingest_rate_limit_per_hour", 1)
+    monkeypatch.setattr(ratelimit, "_clock", lambda: 0.0)
+    user = _uid()
+    ratelimit.enforce_rate_limit(user)  # spends the run budget
+    ratelimit.enforce_ingest_rate_limit(user)  # ingest bucket is independent -> allowed
+    with pytest.raises(RateLimited):
+        ratelimit.enforce_rate_limit(user)  # run bucket now capped
+    with pytest.raises(RateLimited):
+        ratelimit.enforce_ingest_rate_limit(user)  # ingest bucket capped on its own (cap=1)
+
+
 # --- gate through real HTTP ---------------------------------------------------
 
 
@@ -224,11 +255,12 @@ async def _seed_user_with_approvals(sub: str, email: str, rows: list[dict[str, A
 
 
 @requires_db
-async def test_approve_ingest_trigger_is_rate_limited(
+async def test_approve_ingest_trigger_is_capped_hourly(
     migrated_db: None, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(settings, "run_rate_limit_per_hour", 1)
-    monkeypatch.setattr(settings, "run_cooldown_s", 0)
+    """Approvals have their own hourly cap (the ingest bucket) — still bounded so a burst of
+    approvals can't fire unlimited crawl+LLM passes."""
+    monkeypatch.setattr(settings, "ingest_rate_limit_per_hour", 1)
     sub, email = f"test-sub-{uuid.uuid4()}", f"{uuid.uuid4()}@example.com"
     await _seed_user_with_approvals(
         sub, email, [_LIGHTHOUSE, {**_LIGHTHOUSE, "domain": "second.example"}]
@@ -239,12 +271,12 @@ async def test_approve_ingest_trigger_is_rate_limited(
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         listed = (await client.get("/api/v1/approvals", headers=headers)).json()
         first, second = listed[0]["id"], listed[1]["id"]
-        # First approve consumes the only trigger for the hour.
+        # First approve consumes the only ingest trigger for the hour.
         ok = await client.post(
             f"/api/v1/approvals/{first}/decision", json={"decision": "approve"}, headers=headers
         )
         assert ok.status_code == 200
-        # Second approve would trigger another ingest -> gated.
+        # Second approve would trigger another ingest -> gated by the ingest hourly cap.
         limited = await client.post(
             f"/api/v1/approvals/{second}/decision", json={"decision": "approve"}, headers=headers
         )

@@ -96,6 +96,26 @@ describe("ApprovalsView", () => {
     });
     expect(postApprovalDecision).toHaveBeenCalledWith(verified.id, "snooze");
   });
+
+  it("restores the card and shows the reason when a decision fails", async () => {
+    vi.mocked(postApprovalDecision).mockRejectedValueOnce(
+      new Error("Rate-limited — try again in 30s."),
+    );
+    const { container } = render(<ApprovalsView approvals={approvals} />);
+    const card = container.querySelector(`[data-appr="${verified.id}"]`)!;
+
+    fireEvent.click(within(card as HTMLElement).getByText("✓ Approve"));
+
+    await waitFor(() =>
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        "Rate-limited — try again in 30s.",
+      ),
+    );
+    // rolled back — the card is still in the queue
+    expect(
+      container.querySelector(`[data-appr="${verified.id}"]`),
+    ).not.toBeNull();
+  });
 });
 
 describe("ApprovalCard", () => {

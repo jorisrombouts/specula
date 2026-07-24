@@ -4,7 +4,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from specula_api.deps import get_current_user_id, get_session
-from specula_api.ratelimit import RateLimitedRoute, enforce_rate_limit
+from specula_api.ratelimit import RateLimitedRoute, enforce_ingest_rate_limit
 from specula_api.schemas.approval import ApprovalOut, DecisionIn
 from specula_api.services.approval import apply_decision, get_undecided_approvals
 from specula_api.services.run import trigger_company_ingest
@@ -35,9 +35,11 @@ async def decide_approval(
     approval, company_id = result
     if company_id is not None:
         # Gate exactly the approve->ingest trigger (a heavy crawl+LLM pass), not cheap
-        # reject/snooze decisions. Raising here rolls back the decision via get_session, so a
-        # rate-limited approve stays undecided and the retry re-applies it and ingests together.
-        enforce_rate_limit(user_id)
+        # reject/snooze decisions — and via the ingest bucket (its own hourly cap, no cooldown)
+        # so working through the queue isn't throttled by the discovery-run cooldown. Raising
+        # here rolls back the decision via get_session, so a rate-limited approve stays undecided
+        # and the retry re-applies it and ingests together.
+        enforce_ingest_rate_limit(user_id)
         # get_session's post-yield commit doesn't run until after the response
         # (including BackgroundTasks) has been sent — FastAPI's dependency
         # AsyncExitStack now outlives the response to support streaming responses.

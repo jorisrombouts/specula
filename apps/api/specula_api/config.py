@@ -77,6 +77,10 @@ class Settings(BaseSettings):
     openai_daily_budget_usd: float = 20.0  # per-user daily ceiling across runs
     run_rate_limit_per_hour: int = 10  # on-demand trigger cap (NET gate)
     run_cooldown_s: int = 60  # min seconds between a user's triggers
+    # Approve->ingest has its OWN budget (separate bucket, no cooldown): you work through the
+    # approval queue in bursts, so distinct approvals must not be throttled by the discovery-run
+    # cooldown. Still capped per hour to bound crawl+LLM cost.
+    ingest_rate_limit_per_hour: int = 60
     log_level: str = "INFO"
     sentry_dsn: str | None = None  # None → Sentry disabled (live wiring deferred with hosting)
     otel_enabled: bool = False

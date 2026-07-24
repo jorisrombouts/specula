@@ -1,4 +1,4 @@
-import type { Approval } from "@specula/shared-types";
+import type { Approval, RateLimitError } from "@specula/shared-types";
 import { bffFetch } from "@/lib/api/bff";
 
 export type ApprovalDecision = "approve" | "reject" | "snooze";
@@ -18,5 +18,17 @@ export async function postApprovalDecision(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ decision }),
   });
-  if (!res.ok) throw new Error(`Approval decision failed (${res.status})`);
+  if (res.ok) return;
+  // Say WHY it failed. A rate-limited approve carries the seconds to wait; anything else
+  // reports its status so the queue doesn't just silently reject the card.
+  if (res.status === 429) {
+    const body = (await res.json().catch(() => null)) as RateLimitError | null;
+    const secs = body?.retryAfterS;
+    throw new Error(
+      secs
+        ? `Rate-limited — try again in ${secs}s.`
+        : "Rate-limited — try again shortly.",
+    );
+  }
+  throw new Error(`Couldn't ${decision} (${res.status}).`);
 }

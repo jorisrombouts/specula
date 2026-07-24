@@ -7,7 +7,7 @@ limiter needs Redis — deferred with hosting; see `.lane-report.md`.
 import math
 import time
 from collections import defaultdict, deque
-from collections.abc import Callable, Coroutine
+from collections.abc import Callable, Coroutine, Hashable
 from typing import Any
 from uuid import UUID
 
@@ -43,11 +43,12 @@ class _InProcessLimiter:
     """Per-user cooldown + sliding-window cap. Process-local (see module docstring)."""
 
     def __init__(self) -> None:
-        self._hits: dict[UUID, deque[float]] = defaultdict(deque)
+        self._hits: dict[Hashable, deque[float]] = defaultdict(deque)
 
-    def check(self, user_id: UUID, *, per_hour: int, cooldown_s: float, now: float) -> None:
-        """Record a trigger for `user_id`, or raise `RateLimited` if it breaches a limit."""
-        hits = self._hits[user_id]
+    def check(self, key: Hashable, *, per_hour: int, cooldown_s: float, now: float) -> None:
+        """Record a trigger under `key` (a per-user, per-kind bucket), or raise `RateLimited`
+        if it breaches a limit."""
+        hits = self._hits[key]
         while hits and now - hits[0] >= _WINDOW_S:
             hits.popleft()
 
@@ -73,22 +74,31 @@ _clock: Callable[[], float] = time.monotonic
 
 
 def enforce_rate_limit(user_id: UUID) -> None:
-    """Record one on-demand trigger for `user_id`, or raise `RateLimited` on breach.
-
-    Runs and ingests share one per-user trigger budget — both are heavy pipeline triggers, so
-    `settings.run_rate_limit_per_hour` / `run_cooldown_s` bound them together. Callable directly
-    (e.g. the approve->ingest path) as well as via `rate_limit_guard`.
-    """
+    """Gate a discovery RUN for `user_id`, or raise `RateLimited` on breach — a 60s cooldown
+    plus an hourly cap, since a run fires many expensive web searches and rapid re-triggers are
+    almost always accidental."""
     _limiter.check(
-        user_id,
+        ("run", user_id),
         per_hour=settings.run_rate_limit_per_hour,
         cooldown_s=settings.run_cooldown_s,
         now=_clock(),
     )
 
 
+def enforce_ingest_rate_limit(user_id: UUID) -> None:
+    """Gate an approve->ingest for `user_id`, or raise `RateLimited` on breach. Its OWN bucket,
+    with NO cooldown: approving companies one after another in the queue is intended, so only an
+    hourly cap bounds the crawl+LLM cost — the run cooldown must never throttle it."""
+    _limiter.check(
+        ("ingest", user_id),
+        per_hour=settings.ingest_rate_limit_per_hour,
+        cooldown_s=0,
+        now=_clock(),
+    )
+
+
 async def rate_limit_guard(user_id: UUID = Depends(get_current_user_id)) -> None:
-    """FastAPI dependency form of the gate — apply to on-demand trigger endpoints."""
+    """FastAPI dependency form of the run gate — apply to on-demand run-trigger endpoints."""
     enforce_rate_limit(user_id)
 
 

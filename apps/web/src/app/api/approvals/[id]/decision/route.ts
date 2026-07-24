@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import type { ApprovalDecision } from "@/lib/api/approvals";
-import { bffFetch } from "@/lib/api/bff";
+import { bffFetchRaw } from "@/lib/api/bff";
 
 const DECISIONS = new Set<ApprovalDecision>(["approve", "reject", "snooze"]);
 
@@ -14,9 +14,13 @@ export async function POST(
     return NextResponse.json({ error: "invalid decision" }, { status: 400 });
   }
 
-  const result = await bffFetch(`/approvals/${id}/decision`, {
+  // Forward FastAPI's real status + body so a rate-limited approve (429 with retryAfterS)
+  // surfaces to the user instead of collapsing to an opaque 500.
+  const res = await bffFetchRaw(`/approvals/${id}/decision`, {
     method: "POST",
     body: JSON.stringify({ decision: body.decision }),
   });
-  return NextResponse.json(result);
+  const payload =
+    res.status === 204 ? null : await res.json().catch(() => null);
+  return NextResponse.json(payload, { status: res.status });
 }
