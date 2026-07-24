@@ -101,3 +101,28 @@ async def test_opt_out_cannot_affect_another_tenant(migrated_db: None) -> None:
         assert await _opt_out(user_a.id, company_id) is False
     finally:
         await _cleanup_users(user_a.id, user_b.id)
+
+
+@requires_db
+async def test_opted_out_company_is_excluded_from_the_list(migrated_db: None) -> None:
+    """Opt-out is 'remove': the company must disappear from GET /companies (and stay gone on
+    reload), not merely be flagged."""
+    user = await _make_user()
+    try:
+        kept = await _make_company(user.id, domain="kept.example")
+        removed = await _make_company(user.id, domain="removed.example")
+
+        transport = ASGITransport(app=create_app())
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            optout = await client.post(
+                f"/api/v1/companies/{removed}/opt-out", headers=_auth_header(user)
+            )
+            assert optout.status_code == 204
+            listed = await client.get("/api/v1/companies", headers=_auth_header(user))
+
+        assert listed.status_code == 200
+        ids = {row["id"] for row in listed.json()}
+        assert str(kept) in ids
+        assert str(removed) not in ids
+    finally:
+        await _cleanup_users(user.id)

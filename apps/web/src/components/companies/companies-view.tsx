@@ -2,20 +2,20 @@
 
 import { useState } from "react";
 import { Chip } from "@/components/atoms/chip";
-import { Toggle } from "@/components/atoms/toggle";
 import { CompanyLogo } from "@/components/atoms/company-logo";
-import { setCompanyTracking, type CompanyRow } from "@/lib/api/companies";
+import { optOutCompany, type CompanyRow } from "@/lib/api/companies";
 
 export function CompaniesView({ companies }: { companies: CompanyRow[] }) {
   const [q, setQ] = useState("");
-  const [tracking, setTracking] = useState<Record<string, boolean>>({});
+  const [removed, setRemoved] = useState<Set<string>>(new Set());
   const query = q.toLowerCase();
-  const rows = companies.filter(
+  const remaining = companies.filter((c) => !removed.has(c.id ?? c.name));
+  const rows = remaining.filter(
     (c) =>
       c.name.toLowerCase().includes(query) ||
       c.hq.toLowerCase().includes(query),
   );
-  const totalOpen = companies.reduce((s, c) => s + c.open, 0);
+  const totalOpen = remaining.reduce((s, c) => s + c.open, 0);
 
   return (
     <section
@@ -36,7 +36,7 @@ export function CompaniesView({ companies }: { companies: CompanyRow[] }) {
         <div className="flex items-center gap-[14px] font-mono text-[11.5px] text-ink-2">
           <div>
             <b className="text-[15px] font-semibold text-ink">
-              {companies.length}
+              {remaining.length}
             </b>{" "}
             tracked
           </div>
@@ -56,7 +56,7 @@ export function CompaniesView({ companies }: { companies: CompanyRow[] }) {
           className="w-full max-w-[280px] rounded-[9px] border border-rule-2 bg-card px-[12px] py-[8px] font-body text-[13.5px] text-ink focus:border-ink focus:outline-none"
         />
         <span>
-          {rows.length} of {companies.length}
+          {rows.length} of {remaining.length}
         </span>
       </div>
 
@@ -70,7 +70,7 @@ export function CompaniesView({ companies }: { companies: CompanyRow[] }) {
               "HQ confidence",
               "Open",
               "Comp est.",
-              "Tracking",
+              "",
             ].map((h) => (
               <th
                 key={h}
@@ -85,12 +85,15 @@ export function CompaniesView({ companies }: { companies: CompanyRow[] }) {
           {rows.map((c) => {
             const low = c.conf < 80;
             const rowKey = c.id ?? c.name;
-            const on = tracking[rowKey] ?? c.tracking ?? true;
-            const toggle = (next: boolean) => {
-              setTracking((t) => ({ ...t, [rowKey]: next }));
+            const remove = () => {
+              setRemoved((prev) => new Set(prev).add(rowKey));
               if (c.id) {
-                setCompanyTracking(c.id, next).catch(() =>
-                  setTracking((t) => ({ ...t, [rowKey]: !next })),
+                optOutCompany(c.id).catch(() =>
+                  setRemoved((prev) => {
+                    const next = new Set(prev);
+                    next.delete(rowKey);
+                    return next;
+                  }),
                 );
               }
             };
@@ -139,7 +142,13 @@ export function CompaniesView({ companies }: { companies: CompanyRow[] }) {
                   <Chip strong>{c.comp}</Chip>
                 </td>
                 <td className="border-b border-rule px-[14px] py-[15px] align-middle text-[13.5px]">
-                  <Toggle on={on} onChange={toggle} />
+                  <button
+                    type="button"
+                    onClick={remove}
+                    className="font-mono text-[11px] text-ink-3 transition-colors hover:text-warn"
+                  >
+                    Remove
+                  </button>
                 </td>
               </tr>
             );

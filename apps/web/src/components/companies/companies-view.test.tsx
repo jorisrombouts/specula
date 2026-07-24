@@ -45,31 +45,30 @@ describe("CompaniesView", () => {
     expect(screen.getByText("3 of 10")).toBeInTheDocument();
   });
 
-  it("renders the comp-est chip and a tracking toggle per row", () => {
-    const { container } = render(<CompaniesView companies={companies} />);
-    // Toggle atom renders role="switch"; one per row
-    expect(container.querySelectorAll('[role="switch"]')).toHaveLength(10);
+  it("renders the comp-est chip and a Remove action per row", () => {
+    render(<CompaniesView companies={companies} />);
+    expect(screen.getAllByRole("button", { name: "Remove" })).toHaveLength(10);
     expect(screen.getAllByText("€€€").length).toBeGreaterThan(0);
   });
 
-  it("PATCHes /api/companies/{id} when a row's tracking toggle is flipped", async () => {
+  it("removes a row via /opt-out and drops it from the table", async () => {
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
-      .mockResolvedValue(new Response(null, { status: 200 }));
+      .mockResolvedValue(new Response(null, { status: 204 }));
     const rows: CompanyRow[] = [
-      { ...companies[0], id: "co-1", tracking: true },
+      { ...companies[0], id: "co-1" },
+      { ...companies[1], id: "co-2" },
     ];
-    render(<CompaniesView companies={rows} />);
+    const { container } = render(<CompaniesView companies={rows} />);
+    expect(container.querySelectorAll("tbody tr")).toHaveLength(2);
 
-    const toggle = screen.getByRole("switch");
-    expect(toggle).toHaveAttribute("aria-checked", "true");
-    fireEvent.click(toggle);
+    fireEvent.click(screen.getAllByRole("button", { name: "Remove" })[0]);
 
-    expect(toggle).toHaveAttribute("aria-checked", "false"); // optimistic flip
+    // optimistic drop
+    expect(container.querySelectorAll("tbody tr")).toHaveLength(1);
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     const [url, init] = fetchMock.mock.calls[0];
-    expect(url).toBe("/api/companies/co-1");
-    expect(init?.method).toBe("PATCH");
-    expect(JSON.parse(init?.body as string)).toEqual({ tracking: false });
+    expect(url).toBe("/api/companies/co-1/opt-out");
+    expect(init?.method).toBe("POST");
   });
 });

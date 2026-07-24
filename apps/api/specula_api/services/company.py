@@ -35,7 +35,9 @@ async def list_companies(session: AsyncSession, user_id: UUID) -> list[tuple[Com
     stmt = (
         select(Company, func.coalesce(open_counts.c.n, 0))
         .outerjoin(open_counts, open_counts.c.company_id == Company.id)
-        .where(Company.user_id == user_id)
+        # opt_out is per-company "removal" (spec §15): excluded here so a removed company
+        # disappears from the registry and stays gone on reload, not just skipped by ingest.
+        .where(Company.user_id == user_id, Company.opt_out.is_(False))
         .order_by(Company.added_at.desc())
     )
     result = await session.execute(stmt)
