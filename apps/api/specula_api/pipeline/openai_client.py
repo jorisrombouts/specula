@@ -44,6 +44,7 @@ class Source(BaseModel):
 
 
 class EnrichResult(BaseModel):
+    name: str | None = None
     hq_country: str | None = Field(default=None, description=_COUNTRY_DESC)
     hq_confidence: int | None = None
     comp_estimate: str | None = None
@@ -196,10 +197,13 @@ class OpenAIResponsesClient:
             model=self._settings.openai_extract_model,
             result_type=EnrichResult,
             system=(
-                "Enrich the company record below with HQ country, comp estimate, careers URL "
-                "and ATS if determinable from the page text. Leave fields null when not "
-                "evidenced — never guess. hq_country must be an ISO 3166-1 alpha-2 country "
-                "code, uppercase (e.g. ES, DE, GB) — never a full country name or a region."
+                "Enrich the company record below with its name, HQ country, comp estimate, "
+                "careers URL and ATS if determinable from the page text. Leave fields null when "
+                "not evidenced — never guess. `name` is the company's proper, correctly "
+                "capitalised display name as it appears on the page (e.g. 'Duckbill Group', not "
+                "a URL slug like 'duckbilltechnologiesinc'); leave it null if the page does not "
+                "make it clear. hq_country must be an ISO 3166-1 alpha-2 country code, uppercase "
+                "(e.g. ES, DE, GB) — never a full country name or a region."
             ),
             user=user,
         )

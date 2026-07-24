@@ -209,6 +209,43 @@ async def test_enrich_company_falls_back_to_existing_company_fields(
     assert openai.calls[0]["page_text"] is None  # non-200 status tolerated, no page text
 
 
+@requires_db
+async def test_enrich_company_returns_the_llm_cleaned_name(db_session: AsyncSession) -> None:
+    """Discovery derives the name from the URL slug ("Duckbilltechnologiesinc"); the LLM reads
+    the real page and returns a properly-cased company name, which enrich surfaces."""
+    user = await make_user(db_session)
+    await set_tenant(db_session, user.id)
+    company = Company(user_id=user.id, name="Duckbilltechnologiesinc", domain="duckbill.com")
+    db_session.add(company)
+    await db_session.flush()
+
+    openai = _StubOpenAI(EnrichResult(name="Duckbill Group"))
+    fetcher = _StubFetcher(FetchedDoc(url="https://duckbill.com", status=200, text="hi"))
+
+    result = await enrich_company(company, _deps(openai, fetcher))
+
+    assert result.name == "Duckbill Group"
+
+
+@requires_db
+async def test_enrich_company_keeps_existing_name_when_the_llm_offers_none(
+    db_session: AsyncSession,
+) -> None:
+    """No page evidence for a cleaner name -> keep the discovery-derived one, never blank it."""
+    user = await make_user(db_session)
+    await set_tenant(db_session, user.id)
+    company = Company(user_id=user.id, name="Acme", domain="acme.com")
+    db_session.add(company)
+    await db_session.flush()
+
+    openai = _StubOpenAI(EnrichResult())  # LLM returns no name
+    fetcher = _StubFetcher(FetchedDoc(url="https://acme.com", status=200, text="hi"))
+
+    result = await enrich_company(company, _deps(openai, fetcher))
+
+    assert result.name == "Acme"
+
+
 # --- ingest_company -------------------------------------------------------------
 
 
@@ -244,6 +281,27 @@ async def test_ingest_company_applies_enrichment_and_defaults_logo_to_favicon(
     assert refreshed.careers_url == "https://acme.com/careers"
     assert refreshed.ats == "greenhouse"
     assert refreshed.logo_url == "https://icons.duckduckgo.com/ip3/acme.com.ico"
+
+
+@requires_db
+async def test_ingest_company_applies_the_llm_cleaned_name(db_session: AsyncSession) -> None:
+    """End-to-end through `_apply_enrichment`: the LLM's clean name replaces the crude
+    discovery-derived one on the Company (e.g. a Workable "View" card becomes "Booksy")."""
+    user = await make_user(db_session)
+    await set_tenant(db_session, user.id)
+    company = Company(user_id=user.id, name="View", domain="view.jobs.workable.com")
+    db_session.add(company)
+    await db_session.flush()
+    company_id = company.id
+
+    openai = _StubOpenAI(EnrichResult(name="Booksy"))
+    fetcher = _StubFetcher(FetchedDoc(url="https://view.jobs.workable.com", status=200, text="hi"))
+
+    await ingest_company(db_session, user.id, company_id, _deps(openai, fetcher))
+
+    refreshed = await db_session.get(Company, company_id)
+    assert refreshed is not None
+    assert refreshed.name == "Booksy"
 
 
 @requires_db

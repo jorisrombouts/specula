@@ -30,6 +30,9 @@ async def enrich_company(company: Company, deps: PipelineDeps) -> EnrichResult:
     )
 
     return EnrichResult(
+        # The discovery name is a URL slug ("Duckbilltechnologiesinc", or "View" for a Workable
+        # /view/ link); prefer the LLM's page-read display name, keeping the slug only as fallback.
+        name=llm.name or company.name,
         hq_country=to_country_code(llm.hq_country) or company.hq_country,
         hq_confidence=llm.hq_confidence,
         comp_estimate=llm.comp_estimate,

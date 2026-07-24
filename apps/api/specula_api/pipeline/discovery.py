@@ -39,6 +39,25 @@ class _Candidate:
 # the domain below would be wrong rather than merely redundant.
 _SUBDOMAIN_TOKEN_ATS = frozenset({"recruitee", "personio"})
 
+# First path segments that are generic ATS routing words, never a company slug. On a shared
+# host (boards.greenhouse.io/embed/…, …/jobs/…) the real company isn't in the URL, and these
+# job links just duplicate the company's properly-slugged posting — so a candidate whose only
+# identifier is one of these is dropped rather than staged as an "Embed"/"Jobs" card.
+_GENERIC_PATH_SEGMENTS = frozenset(
+    {
+        "view",
+        "embed",
+        "jobs",
+        "job",
+        "careers",
+        "career",
+        "apply",
+        "search",
+        "position",
+        "positions",
+    }
+)
+
 
 def _region_hint(lens: Lens) -> str:
     """A short location hint for a job-search query, from the lens scope (a country code
@@ -117,6 +136,8 @@ async def discover(
             except Exception:
                 errors += 1
                 continue
+            if candidate is None:  # generic routing URL, no company to stage
+                continue
             found += 1
             if candidate.domain in existing_domains:
                 continue
@@ -155,21 +176,42 @@ async def _existing_domains(session: AsyncSession, user_id: UUID) -> set[str]:
     return {domain for domain in (*approval_domains, *company_domains) if domain is not None}
 
 
-def _resolve_candidate(source: Source, query: str) -> _Candidate:
-    """Turn a discovered URL into a staged-approval candidate. When the URL sits on a known
-    ATS host, the board token (path segment) is the only company-distinguishing part of the
-    URL — the ATS host itself is shared across every company hosted there — so it's folded
-    into `domain` to keep candidates from different companies from colliding. The real company
-    domain isn't known at this stage; that's the enrich stage's job."""
+def _workable_view_company(host: str, path: str) -> str | None:
+    """Workable serves a posting two ways: apply.workable.com/<company>/j/<id> (the first path
+    segment IS the company) and jobs.workable.com/view/<id>/<title>-at-<company> (the first
+    segment is the generic word "view"; the company is the '-at-' tail of the title slug).
+    Recover the company from the second shape so the card names it, not "View"."""
+    if host != "jobs.workable.com":
+        return None
+    segments = [s for s in path.split("/") if s]
+    if len(segments) < 3 or segments[0] != "view":
+        return None
+    company = segments[-1].rpartition("-at-")[2].strip()
+    return company or None
+
+
+def _resolve_candidate(source: Source, query: str) -> _Candidate | None:
+    """Turn a discovered URL into a staged-approval candidate, or None to skip it. When the URL
+    sits on a known ATS host, the board token (path segment) is the only company-distinguishing
+    part of the URL — the ATS host itself is shared across every company hosted there — so it's
+    folded into `domain` to keep candidates from different companies from colliding. A generic
+    routing segment (see `_GENERIC_PATH_SEGMENTS`) names no company and is dropped. The real
+    company domain isn't known at this stage; that's the enrich stage's job."""
     parts = urlsplit(source.url)
     host = parts.netloc.lower().removeprefix("www.")
     if not host:
         raise ValueError(f"source URL has no host: {source.url!r}")
 
     ats = detect_ats(domain=None, careers_url=source.url, ats_hint=None)
+    workable_company = _workable_view_company(host, parts.path)
     token = _path_token(parts.path)
 
-    if ats is not None and token and ats not in _SUBDOMAIN_TOKEN_ATS:
+    if workable_company is not None:
+        domain = f"{workable_company}.workable.com"
+        label = workable_company
+    elif ats is not None and token and ats not in _SUBDOMAIN_TOKEN_ATS:
+        if token in _GENERIC_PATH_SEGMENTS:
+            return None
         domain = f"{token}.{host}"
         label = token
     else:

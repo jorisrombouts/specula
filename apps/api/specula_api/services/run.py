@@ -171,6 +171,8 @@ async def trigger_discovery_run(user_id: UUID, run_id: UUID) -> None:
 
 
 def _apply_enrichment(company: Company, enriched: EnrichResult) -> None:
+    if enriched.name:
+        company.name = enriched.name
     if enriched.hq_country is not None:
         company.hq_country = enriched.hq_country
     if enriched.hq_confidence is not None:

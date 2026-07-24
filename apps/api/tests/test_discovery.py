@@ -345,6 +345,7 @@ def test_resolve_candidate_folds_path_token_for_smartrecruiters() -> None:
     different companies from colliding."""
     source = Source(url="https://jobs.smartrecruiters.com/DeliveryHero/744-title", title="x")
     candidate = _resolve_candidate(source, "query")
+    assert candidate is not None
     assert candidate.domain == "deliveryhero.jobs.smartrecruiters.com"
     assert candidate.ats == "smartrecruiters"
     assert candidate.name == "Deliveryhero"
@@ -353,6 +354,7 @@ def test_resolve_candidate_folds_path_token_for_smartrecruiters() -> None:
 def test_resolve_candidate_folds_path_token_for_workable() -> None:
     source = Source(url="https://apply.workable.com/mondu/j/CAAC2E000A", title="x")
     candidate = _resolve_candidate(source, "query")
+    assert candidate is not None
     assert candidate.domain == "mondu.apply.workable.com"
     assert candidate.ats == "workable"
 
@@ -363,6 +365,7 @@ def test_resolve_candidate_does_not_fold_subdomain_token_for_recruitee() -> None
     domain would be wrong, unlike the shared-host ATSes above."""
     source = Source(url="https://bunq.recruitee.com/o/operational-risk-intern-1", title="x")
     candidate = _resolve_candidate(source, "query")
+    assert candidate is not None
     assert candidate.domain == "bunq.recruitee.com"
     assert candidate.ats == "recruitee"
     assert candidate.name == "Bunq"
@@ -371,9 +374,32 @@ def test_resolve_candidate_does_not_fold_subdomain_token_for_recruitee() -> None
 def test_resolve_candidate_does_not_fold_subdomain_token_for_personio() -> None:
     source = Source(url="https://smava.jobs.personio.de/job/275557", title="x")
     candidate = _resolve_candidate(source, "query")
+    assert candidate is not None
     assert candidate.domain == "smava.jobs.personio.de"
     assert candidate.ats == "personio"
     assert candidate.name == "Smava"
+
+
+def test_resolve_candidate_recovers_company_from_a_workable_view_url() -> None:
+    """jobs.workable.com/view/<id>/<title>-at-<company> hides the company in the '-at-' tail of
+    the title slug; the first path segment is the generic word "view". Recover the company so
+    the card names it, not "View"."""
+    source = Source(
+        url="https://jobs.workable.com/view/abc123/senior-data-scientist-in-spain-at-booksy",
+        title="x",
+    )
+    candidate = _resolve_candidate(source, "query")
+    assert candidate is not None
+    assert candidate.name == "Booksy"
+    assert candidate.domain == "booksy.workable.com"
+    assert candidate.ats == "workable"
+
+
+def test_resolve_candidate_skips_a_generic_first_path_segment() -> None:
+    """A generic first segment on a shared ATS host (…/embed/…) names no company and only
+    duplicates the properly-slugged posting — skip it rather than staging an "Embed" card."""
+    source = Source(url="https://boards.greenhouse.io/embed/job_app?token=123", title="x")
+    assert _resolve_candidate(source, "query") is None
 
 
 # --- LLM-written why (spec §7.2) --------------------------------------------------
