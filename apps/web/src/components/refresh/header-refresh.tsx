@@ -33,6 +33,7 @@ export function HeaderRefresh({
       </button>
       {status ? (
         <span
+          data-sync-line
           role={warn ? "alert" : undefined}
           className={`font-mono flex items-center gap-[6px] text-[10.5px] ${warn ? "text-warn" : "text-ink-2"}`}
         >

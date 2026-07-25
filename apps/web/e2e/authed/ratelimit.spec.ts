@@ -13,8 +13,8 @@ import { E2E_API_URL, E2E_SERVICE_JWT_SECRET } from "../visual/auth";
 //
 // IMPORTANT — dedicated user, not the demo tenant: this spec triggers runs purely to
 // exhaust a cooldown, which would otherwise leave the SHARED demo user rate-limited for
-// the very next spec (refresh.spec.ts, alphabetically adjacent), making its "Refresh now"
-// trigger 429 and its sidebar never reach "synced just now". The rate limit is per-user,
+// the very next spec (refresh.spec.ts, alphabetically adjacent), making its "Find new
+// companies" trigger 429 and its status line never reach "checked just now". The rate limit is per-user,
 // so we mint for a throwaway sub instead — the API auto-provisions it (deps.py) — and the
 // demo tenant stays clean. This isolation is the whole reason the spec passes a distinct
 // subject below.
@@ -49,12 +49,13 @@ test.describe("Run-trigger rate limit", () => {
     });
 
     // Confirm the real trigger affordance is on the page before going around it.
-    await page.goto("/jobs");
+    // POST /runs is what the Approvals header's "Find new companies" button calls.
+    await page.goto("/approvals");
     await expect(
-      page.getByRole("heading", { name: "Jobs", level: 1 }),
+      page.getByRole("heading", { name: "Approval queue", level: 1 }),
     ).toBeVisible();
     await expect(
-      page.getByRole("button", { name: /refresh now/i }),
+      page.getByRole("button", { name: /find new companies/i }),
     ).toBeVisible();
 
     const headers = { Authorization: `Bearer ${await serviceToken()}` };
