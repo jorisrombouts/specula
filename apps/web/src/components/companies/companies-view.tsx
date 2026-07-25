@@ -1,19 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import type { Run } from "@specula/shared-types";
 import { Chip } from "@/components/atoms/chip";
 import { CompanyLogo } from "@/components/atoms/company-logo";
-import { CompaniesRefreshButton } from "@/components/companies/companies-refresh-button";
 import { optOutCompany, type CompanyRow } from "@/lib/api/companies";
 
-export function CompaniesView({
-  companies,
-  latestRun,
-}: {
-  companies: CompanyRow[];
-  latestRun: Run | null;
-}) {
+export function CompaniesView({ companies }: { companies: CompanyRow[] }) {
   const [q, setQ] = useState("");
   const [removed, setRemoved] = useState<Set<string>>(new Set());
   const query = q.toLowerCase();
@@ -41,21 +33,18 @@ export function CompaniesView({
             only). Global across every lens.
           </p>
         </div>
-        <div className="flex items-end gap-[22px]">
-          <div className="flex items-center gap-[14px] pb-[3px] font-mono text-[11.5px] text-ink-2">
-            <div>
-              <b className="text-[15px] font-semibold text-ink">
-                {remaining.length}
-              </b>{" "}
-              tracked
-            </div>
-            <span className="h-[26px] w-px bg-rule" />
-            <div>
-              <b className="text-[15px] font-semibold text-ink">{totalOpen}</b>{" "}
-              open roles
-            </div>
+        <div className="flex items-center gap-[14px] font-mono text-[11.5px] text-ink-2">
+          <div>
+            <b className="text-[15px] font-semibold text-ink">
+              {remaining.length}
+            </b>{" "}
+            tracked
           </div>
-          <CompaniesRefreshButton initialRun={latestRun} />
+          <span className="h-[26px] w-px bg-rule" />
+          <div>
+            <b className="text-[15px] font-semibold text-ink">{totalOpen}</b>{" "}
+            open roles
+          </div>
         </div>
       </header>
 

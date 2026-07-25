@@ -6,9 +6,9 @@ import { useLatestRun } from "@/lib/use-latest-run";
 import { relative } from "@/lib/relative-time";
 import { HeaderRefresh } from "@/components/refresh/header-refresh";
 
-// Companies-page refresh: runs discovery (the old sidebar "Refresh now") to find new candidate
-// companies, which land in the Approval queue. The status line shows when discovery last ran.
-export function CompaniesRefreshButton({
+// Approvals-page refresh: runs discovery (the old sidebar "Refresh now") to find new candidate
+// companies — which land right here in the queue. The status line shows when discovery last ran.
+export function FindCompaniesButton({
   initialRun,
 }: {
   initialRun: Run | null;

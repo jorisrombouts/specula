@@ -21,6 +21,8 @@ vi.mock("@/lib/api/approvals", async (importActual) => {
     postApprovalDecision: vi.fn().mockResolvedValue(undefined),
   };
 });
+// The header's "Find new companies" button uses useRouter (via useLatestRun).
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 
 const { getApprovals, postApprovalDecision } =
   await import("@/lib/api/approvals");
@@ -36,7 +38,9 @@ const unverified = approvals.find((a) => a.unverified)!;
 
 describe("ApprovalsView", () => {
   it("renders the DERIVED pending count and 0 approved", () => {
-    const { container } = render(<ApprovalsView approvals={approvals} />);
+    const { container } = render(
+      <ApprovalsView approvals={approvals} latestRun={null} />,
+    );
     const header = container.querySelector("header")!;
     expect(header).toHaveTextContent("6");
     expect(header).toHaveTextContent("pending");
@@ -45,12 +49,16 @@ describe("ApprovalsView", () => {
   });
 
   it("renders one card per approval", () => {
-    const { container } = render(<ApprovalsView approvals={approvals} />);
+    const { container } = render(
+      <ApprovalsView approvals={approvals} latestRun={null} />,
+    );
     expect(container.querySelectorAll("[data-appr]")).toHaveLength(6);
   });
 
   it("approving posts the decision, drops the card, and increments approved", async () => {
-    const { container } = render(<ApprovalsView approvals={approvals} />);
+    const { container } = render(
+      <ApprovalsView approvals={approvals} latestRun={null} />,
+    );
     const header = container.querySelector("header")!;
     const card = container.querySelector(`[data-appr="${verified.id}"]`)!;
 
@@ -67,7 +75,9 @@ describe("ApprovalsView", () => {
   });
 
   it("rejecting drops the card without incrementing approved", async () => {
-    const { container } = render(<ApprovalsView approvals={approvals} />);
+    const { container } = render(
+      <ApprovalsView approvals={approvals} latestRun={null} />,
+    );
     const header = container.querySelector("header")!;
     const card = container.querySelector(`[data-appr="${verified.id}"]`)!;
 
@@ -84,7 +94,9 @@ describe("ApprovalsView", () => {
   });
 
   it("snoozing drops the card without incrementing approved", async () => {
-    const { container } = render(<ApprovalsView approvals={approvals} />);
+    const { container } = render(
+      <ApprovalsView approvals={approvals} latestRun={null} />,
+    );
     const card = container.querySelector(`[data-appr="${verified.id}"]`)!;
 
     fireEvent.click(within(card as HTMLElement).getByTitle("Snooze"));
@@ -97,11 +109,41 @@ describe("ApprovalsView", () => {
     expect(postApprovalDecision).toHaveBeenCalledWith(verified.id, "snooze");
   });
 
+  it("renders the 'Find new companies' discovery button in the header", () => {
+    const { container } = render(
+      <ApprovalsView approvals={approvals} latestRun={null} />,
+    );
+    const header = container.querySelector("header")!;
+    expect(
+      within(header).getByRole("button", { name: "Find new companies" }),
+    ).toBeInTheDocument();
+  });
+
+  it("merges newly-discovered approvals into the queue when props refresh", () => {
+    const { container, rerender } = render(
+      <ApprovalsView approvals={approvals} latestRun={null} />,
+    );
+    expect(container.querySelectorAll("[data-appr]")).toHaveLength(6);
+
+    // A completed discovery run → router.refresh() → the page re-renders with a
+    // longer approvals list. The freshly-found company must appear in the queue.
+    const discovered = { ...approvals[0], id: "newly-found-1" };
+    rerender(
+      <ApprovalsView approvals={[discovered, ...approvals]} latestRun={null} />,
+    );
+    expect(container.querySelectorAll("[data-appr]")).toHaveLength(7);
+    expect(
+      container.querySelector('[data-appr="newly-found-1"]'),
+    ).not.toBeNull();
+  });
+
   it("restores the card and shows the reason when a decision fails", async () => {
     vi.mocked(postApprovalDecision).mockRejectedValueOnce(
       new Error("Rate-limited — try again in 30s."),
     );
-    const { container } = render(<ApprovalsView approvals={approvals} />);
+    const { container } = render(
+      <ApprovalsView approvals={approvals} latestRun={null} />,
+    );
     const card = container.querySelector(`[data-appr="${verified.id}"]`)!;
 
     fireEvent.click(within(card as HTMLElement).getByText("✓ Approve"));

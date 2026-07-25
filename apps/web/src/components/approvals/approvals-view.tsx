@@ -1,27 +1,52 @@
 "use client";
 
-import { useState } from "react";
-import type { Approval } from "@specula/shared-types";
+import { useEffect, useRef, useState } from "react";
+import type { Approval, Run } from "@specula/shared-types";
 import { ApprovalCard } from "@/components/approvals/approval-card";
+import { FindCompaniesButton } from "@/components/approvals/find-companies-button";
 import {
   postApprovalDecision,
   type ApprovalDecision,
 } from "@/lib/api/approvals";
 
-export function ApprovalsView({ approvals }: { approvals: Approval[] }) {
+export function ApprovalsView({
+  approvals,
+  latestRun,
+}: {
+  approvals: Approval[];
+  latestRun: Run | null;
+}) {
   const [queue, setQueue] = useState(approvals);
   const [approved, setApproved] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  // Ids the user has already decided on this session — so a refresh after discovery
+  // doesn't re-add a card they just approved/rejected.
+  const decided = useRef<Set<string>>(new Set());
+
+  // A completed discovery run calls router.refresh(), which re-fetches the approvals prop with
+  // the newly-found companies. useState ignores prop changes, so merge any genuinely new,
+  // undecided approvals into the queue here (on mount they're all already present → no-op).
+  useEffect(() => {
+    setQueue((q) => {
+      const have = new Set(q.map((a) => a.id));
+      const fresh = approvals.filter(
+        (a) => !have.has(a.id) && !decided.current.has(a.id),
+      );
+      return fresh.length ? [...fresh, ...q] : q;
+    });
+  }, [approvals]);
 
   // Optimistically drop the card; the "N approved" header stays DERIVED from
   // decisions made. Roll back AND surface why if the decision fails to persist.
   async function decide(approval: Approval, decision: ApprovalDecision) {
     setError(null);
+    decided.current.add(approval.id);
     setQueue((q) => q.filter((a) => a.id !== approval.id));
     if (decision === "approve") setApproved((n) => n + 1);
     try {
       await postApprovalDecision(approval.id, decision);
     } catch (e) {
+      decided.current.delete(approval.id);
       setQueue((q) => [approval, ...q]);
       if (decision === "approve") setApproved((n) => n - 1);
       setError(e instanceof Error ? e.message : "Action failed.");
@@ -45,16 +70,21 @@ export function ApprovalsView({ approvals }: { approvals: Approval[] }) {
             suppress repeats.
           </p>
         </div>
-        <div className="flex items-center gap-[14px] font-mono text-[11.5px] text-ink-2">
-          <div>
-            <b className="text-[15px] font-semibold text-ink">{queue.length}</b>{" "}
-            pending
+        <div className="flex items-end gap-[22px]">
+          <div className="flex items-center gap-[14px] pb-[3px] font-mono text-[11.5px] text-ink-2">
+            <div>
+              <b className="text-[15px] font-semibold text-ink">
+                {queue.length}
+              </b>{" "}
+              pending
+            </div>
+            <span className="h-[26px] w-px bg-rule" />
+            <div>
+              <b className="text-[15px] font-semibold text-ink">{approved}</b>{" "}
+              approved
+            </div>
           </div>
-          <span className="h-[26px] w-px bg-rule" />
-          <div>
-            <b className="text-[15px] font-semibold text-ink">{approved}</b>{" "}
-            approved
-          </div>
+          <FindCompaniesButton initialRun={latestRun} />
         </div>
       </header>
 

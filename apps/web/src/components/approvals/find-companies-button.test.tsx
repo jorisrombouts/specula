@@ -12,8 +12,8 @@ const triggerRun = vi.fn();
 vi.mock("@/lib/api/runs", () => ({ triggerRun: () => triggerRun() }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 
-const { CompaniesRefreshButton } =
-  await import("@/components/companies/companies-refresh-button");
+const { FindCompaniesButton } =
+  await import("@/components/approvals/find-companies-button");
 
 const STATS = {
   found: 0,
@@ -38,9 +38,9 @@ afterEach(() => {
   triggerRun.mockReset();
 });
 
-describe("CompaniesRefreshButton", () => {
+describe("FindCompaniesButton", () => {
   it("shows a 'checked …' status from the last discovery run", () => {
-    render(<CompaniesRefreshButton initialRun={FINISHED} />);
+    render(<FindCompaniesButton initialRun={FINISHED} />);
     expect(screen.getByText(/^checked /)).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Find new companies" }),
@@ -49,7 +49,7 @@ describe("CompaniesRefreshButton", () => {
 
   it("triggers discovery and enters the searching state", async () => {
     triggerRun.mockResolvedValue({ ...FINISHED, status: "queued" });
-    render(<CompaniesRefreshButton initialRun={null} />);
+    render(<FindCompaniesButton initialRun={null} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Find new companies" }));
 
@@ -61,7 +61,7 @@ describe("CompaniesRefreshButton", () => {
 
   it("surfaces a rate-limit as a warn alert", async () => {
     triggerRun.mockRejectedValue(new Error("Rate-limited — try again in 42s."));
-    render(<CompaniesRefreshButton initialRun={null} />);
+    render(<FindCompaniesButton initialRun={null} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Find new companies" }));
 
