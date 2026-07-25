@@ -6,7 +6,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from specula_api.deps import get_current_user_id, get_session
 from specula_api.ratelimit import RateLimitedRoute, rate_limit_guard
 from specula_api.schemas.run import RunOut
-from specula_api.services.run import create_run, get_run, latest_run, trigger_discovery_run
+from specula_api.services.run import (
+    create_run,
+    get_run,
+    latest_run,
+    trigger_discovery_run,
+    trigger_rescore_run,
+)
 
 router = APIRouter(prefix="/runs", tags=["runs"], route_class=RateLimitedRoute)
 
@@ -27,6 +33,22 @@ async def start_run(
     # own tenant_session connection before it starts.
     await session.commit()
     background_tasks.add_task(trigger_discovery_run, user_id, run.id)
+    return out
+
+
+@router.post("/rescore", status_code=201)
+async def start_rescore(
+    background_tasks: BackgroundTasks,
+    user_id: UUID = Depends(get_current_user_id),
+    _: None = Depends(rate_limit_guard),
+    session: AsyncSession = Depends(get_session),
+) -> RunOut:
+    """Re-score every existing posting against the current profile (no discovery). Uses the run
+    rate-limit bucket — it's a heavy, deliberate full-corpus pass like a discovery run."""
+    run = await create_run(session, user_id, kind="rescore")
+    out = RunOut.from_model(run)
+    await session.commit()
+    background_tasks.add_task(trigger_rescore_run, user_id, run.id)
     return out
 
 

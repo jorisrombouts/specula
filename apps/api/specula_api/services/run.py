@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import UUID
@@ -90,8 +91,14 @@ async def get_run(session: AsyncSession, user_id: UUID, run_id: UUID) -> Run | N
 
 
 async def latest_run(session: AsyncSession, user_id: UUID) -> Run | None:
+    # Excludes rescore runs: this feeds the sidebar's "synced Nd ago · N new" indicator, which
+    # is about DISCOVERY (when we last looked for new jobs). A rescore finds no new jobs, so it
+    # must not supersede that line — it still lives in the DB + cost dashboard.
     run: Run | None = await session.scalar(
-        select(Run).where(Run.user_id == user_id).order_by(Run.created_at.desc()).limit(1)
+        select(Run)
+        .where(Run.user_id == user_id, Run.kind != "rescore")
+        .order_by(Run.created_at.desc())
+        .limit(1)
     )
     return run
 
@@ -170,6 +177,61 @@ async def trigger_discovery_run(user_id: UUID, run_id: UUID) -> None:
         pass
 
 
+async def run_rescore(
+    session: AsyncSession, user_id: UUID, run_id: UUID, deps: PipelineDeps
+) -> None:
+    """Re-score all existing postings against the current profile, wrapped in a Run for the same
+    budget guard + cost ledger + observability as discovery (mirrors `run_discovery`)."""
+    run = await get_run(session, user_id, run_id)
+    if run is None:
+        return
+
+    run.status = "running"
+    run.started_at = datetime.now(UTC)
+    await session.flush()
+    await _seed_daily_baseline(session, user_id, deps)
+
+    with log_context(user_id=user_id, run_id=run_id):
+        _log.info("run.rescore.start", extra={"stage": "score"})
+        try:
+            scored = await rescore_all(session, user_id, deps)
+            stats: dict[str, object] = {
+                "found": 0,
+                "new": 0,
+                "closed": 0,
+                "low_conf_excluded": 0,
+                "errors": 0,
+                "scored": scored,
+            }
+            run.cost_usd = await _persist_costs(
+                session, user_id, deps, run_id=run_id, company_id=None
+            )
+            await finalize_run(session, run, stats, status="done")
+            _log.info("run.rescore.done", extra={"stage": "score", "scored": scored})
+        except BudgetExceeded as exc:
+            run.cost_usd = await _persist_costs(
+                session, user_id, deps, run_id=run_id, company_id=None
+            )
+            await finalize_run(session, run, {**_ERROR_STATS, "scored": 0}, status="error")
+            _log.warning("run.budget_exceeded", extra={"stage": "score", "scope": exc.scope})
+        except Exception:
+            await finalize_run(session, run, {**_ERROR_STATS, "scored": 0}, status="error")
+            raise
+
+
+async def trigger_rescore_run(user_id: UUID, run_id: UUID) -> None:
+    if settings.pipeline_execution == "inline":
+        deps = build_deps(settings)
+        try:
+            async with tenant_session(user_id) as session:
+                await run_rescore(session, user_id, run_id, deps)
+        finally:
+            await deps.aclose()
+    else:
+        # TODO(scheduler milestone): enqueue to Arq
+        pass
+
+
 def _apply_enrichment(company: Company, enriched: EnrichResult) -> None:
     if enriched.name:
         company.name = enriched.name
@@ -241,36 +303,92 @@ async def _ingest_pipeline(
 
     await dedup_company(session, user_id, company.id)
 
+    ctx = await _prepare_scoring(session, user_id, deps)
+    if ctx is None:
+        return
+    await _score_company_postings(session, user_id, company.id, ctx, deps)
+
+
+@dataclass(frozen=True)
+class _ScoringContext:
+    """The per-user scoring inputs, computed once and reused across every posting in a run or
+    rescore: the candidate profile, targeting, and the Targeting-derived embeddings."""
+
+    candidate: CandidateProfile
+    targeting: Targeting
+    role_titles_vec: list[float]
+    must_have_vecs: list[list[float]]
+
+
+async def _prepare_scoring(
+    session: AsyncSession, user_id: UUID, deps: PipelineDeps
+) -> _ScoringContext | None:
+    """Load the candidate profile + targeting and embed the Targeting-derived vectors ONCE
+    (role titles + must-haves), shared across every posting scored. Returns None when the user
+    has no profile or targeting yet — there is nothing to score against."""
     candidate = await session.get(CandidateProfile, user_id)
     targeting = await session.get(Targeting, user_id)
     if candidate is None or targeting is None:
-        return
+        return None
 
     await ensure_candidate_vectors(session, candidate, deps)
     [role_titles_vec] = await deps.openai.embed([" ".join(targeting.role_titles)])
-    # Per-run constants derived from Targeting, embedded once here rather than per posting
-    # (same reason as role_titles_vec above). Casefolded so a must-have compares against the
-    # CANONICAL form skill_vectors caches — "Python" and the skill "python" then resolve to
-    # one vector and match at exactly 1.0 instead of merely being near neighbours.
-    # `must_haves` defaults to '{}', so empty is the normal state for a new user. The live
-    # embeddings endpoint rejects an empty input array, which would kill the run before a
-    # single posting is scored — and the recorded client can't catch it, since it loops over
-    # `texts` and returns [] for [] quite happily.
+    # Casefolded so a must-have compares against the CANONICAL form skill_vectors caches —
+    # "Python" and the skill "python" then resolve to one vector and match at exactly 1.0
+    # instead of merely being near neighbours. `must_haves` defaults to '{}', so empty is the
+    # normal state for a new user. The live embeddings endpoint rejects an empty input array,
+    # which would kill scoring before a single posting is scored — and the recorded client
+    # can't catch it, since it loops over `texts` and returns [] for [] quite happily.
     must_have_texts = [must_have.strip().casefold() for must_have in targeting.must_haves]
     must_have_vecs = await deps.openai.embed(must_have_texts) if must_have_texts else []
+    return _ScoringContext(candidate, targeting, role_titles_vec, must_have_vecs)
 
+
+async def _score_company_postings(
+    session: AsyncSession, user_id: UUID, company_id: UUID, ctx: _ScoringContext, deps: PipelineDeps
+) -> int:
+    """Score every scorable (extracted, confident) posting for one company against `ctx`, and
+    return the count. `score_posting` upserts by posting_id, so this safely re-scores."""
     scorable = await session.scalars(
         select(Posting).where(
-            Posting.company_id == company.id,
+            Posting.company_id == company_id,
             Posting.user_id == user_id,
             Posting.title.is_not(None),
             Posting.extraction_confidence >= 1,
         )
     )
+    count = 0
     for posting in scorable:
         await score_posting(
-            session, user_id, posting, candidate, targeting, role_titles_vec, must_have_vecs, deps
+            session,
+            user_id,
+            posting,
+            ctx.candidate,
+            ctx.targeting,
+            ctx.role_titles_vec,
+            ctx.must_have_vecs,
+            deps,
         )
+        count += 1
+    return count
+
+
+async def rescore_all(session: AsyncSession, user_id: UUID, deps: PipelineDeps) -> int:
+    """Re-score every existing posting against the CURRENT candidate profile + targeting — no
+    crawl, no extract (the profile changed, the postings didn't). Skips opted-out companies.
+    Returns the number of postings scored."""
+    ctx = await _prepare_scoring(session, user_id, deps)
+    if ctx is None:
+        return 0
+    company_ids = (
+        await session.scalars(
+            select(Company.id).where(Company.user_id == user_id, Company.opt_out.is_(False))
+        )
+    ).all()
+    total = 0
+    for company_id in company_ids:
+        total += await _score_company_postings(session, user_id, company_id, ctx, deps)
+    return total
 
 
 async def trigger_company_ingest(user_id: UUID, company_id: UUID) -> None:

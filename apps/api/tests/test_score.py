@@ -4,7 +4,7 @@ from pathlib import Path
 from uuid import UUID, uuid4
 
 from conftest import make_user, set_tenant
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from test_db import requires_db
 
@@ -13,6 +13,7 @@ from specula_api.db.models import (
     CandidateProfile,
     Company,
     Posting,
+    Run,
     Score,
     SkillsTaxonomy,
     Targeting,
@@ -34,7 +35,7 @@ from specula_api.pipeline.score import (
     skill_vectors,
 )
 from specula_api.services.jobs import get_job
-from specula_api.services.run import ingest_company
+from specula_api.services.run import create_run, ingest_company, latest_run, rescore_all
 
 # A realistic posting page: extraction now requires meaningfully readable text, so a
 # two-word stub would (correctly) be treated as an unextractable shell.
@@ -1022,3 +1023,103 @@ async def test_score_posting_flags_a_must_have_when_posting_lists_no_skills(
     )
 
     assert score.red_flag == "Missing must-have: Python"
+
+
+# --- rescore_all --------------------------------------------------------------------
+
+
+async def _make_scorable_posting(
+    session: AsyncSession, user_id: UUID, company_id: UUID, deps: PipelineDeps, *, title: str
+) -> Posting:
+    posting = Posting(
+        user_id=user_id,
+        company_id=company_id,
+        source="scrape",
+        source_url=f"https://acme.com/jobs/{uuid4()}",
+        content_hash=f"hash-{uuid4()}",
+        title=title,
+        required_skills=["Python", "SQL"],
+        extraction_confidence=90,
+    )
+    session.add(posting)
+    await session.flush()
+    await embed_posting(posting, deps)
+    return posting
+
+
+@requires_db
+async def test_rescore_all_rescored_scores_reflect_the_current_profile(
+    db_session: AsyncSession,
+) -> None:
+    """Editing the profile then re-scoring updates the stored Score against the NEW targeting —
+    the whole point of the feature — and upserts (no duplicate Score rows)."""
+    user = await make_user(db_session)
+    await set_tenant(db_session, user.id)
+    deps = _deps(_EchoingOpenAI())
+
+    await _make_candidate(db_session, user.id, skills=["Python", "SQL"])
+    targeting = await _make_targeting(db_session, user.id, role_titles=["Data Scientist"])
+    company = Company(user_id=user.id, name="Acme", domain="acme.com")
+    db_session.add(company)
+    await db_session.flush()
+    posting = await _make_scorable_posting(
+        db_session, user.id, company.id, deps, title="Data Scientist"
+    )
+
+    assert await rescore_all(db_session, user.id, deps) == 1
+    before = await db_session.get(Score, posting.id)
+    assert before is not None
+    role_before = before.factor_role
+
+    # Change the profile to an unrelated role, then re-score.
+    targeting.role_titles = ["Veterinary Nurse"]
+    await db_session.flush()
+    assert await rescore_all(db_session, user.id, deps) == 1  # same posting, re-scored
+
+    after = await db_session.get(Score, posting.id)
+    assert after is not None
+    assert after.factor_role != role_before  # score now reflects the new profile
+    # Idempotent upsert: still exactly one Score row for the posting.
+    count = await db_session.scalar(
+        select(func.count()).select_from(Score).where(Score.user_id == user.id)
+    )
+    assert count == 1
+
+
+@requires_db
+async def test_rescore_all_skips_opted_out_companies(db_session: AsyncSession) -> None:
+    """A removed (opted-out) company's postings must not be re-scored."""
+    user = await make_user(db_session)
+    await set_tenant(db_session, user.id)
+    deps = _deps(_EchoingOpenAI())
+
+    await _make_candidate(db_session, user.id, skills=["Python"])
+    await _make_targeting(db_session, user.id, role_titles=["Data Scientist"])
+    kept = Company(user_id=user.id, name="Kept", domain="kept.example")
+    removed = Company(user_id=user.id, name="Removed", domain="removed.example", opt_out=True)
+    db_session.add_all([kept, removed])
+    await db_session.flush()
+    await _make_scorable_posting(db_session, user.id, kept.id, deps, title="Data Scientist")
+    await _make_scorable_posting(db_session, user.id, removed.id, deps, title="Data Scientist")
+
+    assert await rescore_all(db_session, user.id, deps) == 1  # only the kept company's posting
+
+
+@requires_db
+async def test_latest_run_excludes_rescore_runs(db_session: AsyncSession) -> None:
+    """The sidebar's 'synced' line is about discovery, so a later rescore run must not supersede
+    the last discovery run as `latest_run`."""
+    user = await make_user(db_session)
+    await set_tenant(db_session, user.id)
+
+    discovery = await create_run(db_session, user.id, kind="on_demand")
+    await create_run(db_session, user.id, kind="rescore")  # more recent, but not a discovery
+
+    latest = await latest_run(db_session, user.id)
+    assert latest is not None
+    assert latest.id == discovery.id
+    assert latest.kind != "rescore"
+
+    # Sanity: the rescore run does exist in the table, just excluded from latest_run.
+    all_kinds = set(await db_session.scalars(select(Run.kind).where(Run.user_id == user.id)))
+    assert all_kinds == {"on_demand", "rescore"}

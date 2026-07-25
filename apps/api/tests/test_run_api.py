@@ -8,7 +8,7 @@ from specula_api.auth import mint
 from specula_api.config import settings
 from specula_api.main import create_app
 
-_ZERO_STATS = {"found": 0, "new": 0, "closed": 0, "lowConfExcluded": 0, "errors": 0}
+_ZERO_STATS = {"found": 0, "new": 0, "closed": 0, "lowConfExcluded": 0, "errors": 0, "scored": 0}
 
 
 @pytest.fixture(autouse=True)
@@ -44,6 +44,30 @@ async def test_post_runs_creates_queued_run_that_completes_inline(migrated_db: N
         assert latest_body["id"] == body["id"]
         assert latest_body["status"] == "done"
         assert latest_body["stats"] == _ZERO_STATS
+
+
+@requires_db
+async def test_post_rescore_creates_a_rescore_run_that_completes_inline(migrated_db: None) -> None:
+    headers = _auth_header()
+    transport = ASGITransport(app=create_app())
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        res = await client.post("/api/v1/runs/rescore", headers=headers)
+        assert res.status_code == 201
+        body = res.json()
+        assert body["kind"] == "rescore"
+        assert body["status"] == "queued"
+
+        # The BackgroundTask ran inline; fetch the run by id (latest excludes rescore).
+        got = await client.get(f"/api/v1/runs/{body['id']}", headers=headers)
+        assert got.status_code == 200
+        run = got.json()
+        assert run["status"] == "done"
+        assert run["stats"]["scored"] == 0  # fresh user, nothing to score
+
+        # A rescore must NOT surface as the discovery "synced" run in the sidebar.
+        latest = await client.get("/api/v1/runs/latest", headers=headers)
+        assert latest.status_code == 200
+        assert latest.json() is None
 
 
 @requires_db

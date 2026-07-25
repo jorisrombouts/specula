@@ -10,7 +10,14 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh }) }));
 
 const { useLatestRun } = await import("@/lib/use-latest-run");
 
-const STATS = { found: 0, new: 0, closed: 0, lowConfExcluded: 0, errors: 0 };
+const STATS = {
+  found: 0,
+  new: 0,
+  closed: 0,
+  lowConfExcluded: 0,
+  errors: 0,
+  scored: 0,
+};
 const QUEUED: Run = {
   id: "r2",
   kind: "on_demand",

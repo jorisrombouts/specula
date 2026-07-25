@@ -13,6 +13,7 @@ import { ProjectEditor } from "@/components/candidate/project-editor";
 import { ExperienceEditor } from "@/components/candidate/experience-editor";
 import { COMMON_SKILLS } from "@/lib/skills-catalog";
 import { saveCandidate, type CandidatePatch } from "@/lib/api/candidate";
+import { RescoreButton } from "@/components/candidate/rescore-button";
 
 const INPUT =
   "w-full rounded-[9px] border border-rule-2 bg-card px-[13px] py-[11px] font-body text-[13.5px] text-ink focus:border-ink focus:outline-none";
@@ -191,6 +192,15 @@ export function CandidateView({
             {!dirty && justSaved && (
               <span className="text-[12.5px] text-ink-2">Saved.</span>
             )}
+          </div>
+
+          <div className="mt-[16px] border-t border-rule pt-[16px]">
+            <p className="mb-[9px] max-w-[54ch] text-[12px] leading-[1.5] text-ink-2">
+              Match scores are set when a company is approved. After editing
+              your profile or targeting, re-score existing jobs to apply the
+              change.
+            </p>
+            <RescoreButton />
           </div>
         </div>
 

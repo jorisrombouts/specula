@@ -66,7 +66,14 @@ export const runApiFixture: Run = {
   status: "done",
   startedAt: "2026-07-05T08:00:00Z",
   finishedAt: "2026-07-05T08:03:00Z",
-  stats: { found: 13, new: 7, closed: 0, lowConfExcluded: 1, errors: 0 },
+  stats: {
+    found: 13,
+    new: 7,
+    closed: 0,
+    lowConfExcluded: 1,
+    errors: 0,
+    scored: 0,
+  },
   createdAt: "2026-07-05T08:00:00Z",
 };
 
@@ -143,7 +150,14 @@ export async function mockBffFetch<T = unknown>(
       status: "queued",
       startedAt: null,
       finishedAt: null,
-      stats: { found: 0, new: 0, closed: 0, lowConfExcluded: 0, errors: 0 },
+      stats: {
+        found: 0,
+        new: 0,
+        closed: 0,
+        lowConfExcluded: 0,
+        errors: 0,
+        scored: 0,
+      },
     } as T;
   }
   if (path === "/runs/latest") return runApiFixture as T;

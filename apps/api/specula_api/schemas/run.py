@@ -17,6 +17,7 @@ class RunStats(CamelModel):
     closed: int = 0
     low_conf_excluded: int = 0
     errors: int = 0
+    scored: int = 0  # postings re-scored — only set by a rescore run
 
 
 class RunCost(CamelModel):
