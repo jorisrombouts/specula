@@ -15,6 +15,7 @@ vi.mock("@/lib/api/bff", async () => {
   const { mockBffFetch } = await import("@/lib/api/test-fixtures");
   return { bffFetch: mockBffFetch };
 });
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 
 const { getJobsPool } = await import("@/lib/api/jobs");
 const { getLenses } = await import("@/lib/api/lenses");

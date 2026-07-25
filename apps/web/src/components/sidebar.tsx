@@ -3,26 +3,18 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
-import type { Run } from "@specula/shared-types";
 import { NAV, isActive, type NavItem } from "@/lib/nav";
 import { Icon } from "@/components/icon";
-import { SyncStatus } from "@/components/sync-status";
 
 type SidebarUser = { name?: string | null; email?: string | null };
 
-export function Sidebar({
-  user,
-  latestRun,
-}: {
-  user: SidebarUser;
-  latestRun: Run | null;
-}) {
+export function Sidebar({ user }: { user: SidebarUser }) {
   const pathname = usePathname();
 
   return (
     <aside className="flex flex-col overflow-hidden border-r border-rule bg-panel">
-      {/* Brand + sync/refresh */}
-      <div className="border-b border-rule px-5 pb-4 pt-[22px]">
+      {/* Brand — refresh now lives on the Jobs & Companies pages, not here. */}
+      <div className="border-b border-rule px-5 pb-[18px] pt-[22px]">
         <div className="flex items-baseline gap-2">
           <span className="font-display text-[23px] font-semibold tracking-[0.05em] text-ink">
             Specula
@@ -31,7 +23,6 @@ export function Sidebar({
             role ledger
           </span>
         </div>
-        <SyncStatus initialRun={latestRun} />
       </div>
 
       {/* Nav */}

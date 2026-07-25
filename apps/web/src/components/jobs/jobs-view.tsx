@@ -13,6 +13,7 @@ import { usePrefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
 import { useTweaks } from "@/lib/tweaks";
 import { originLabel } from "@/lib/lens-catalog";
 import { LensBar } from "@/components/jobs/lens-bar";
+import { JobsRescoreButton } from "@/components/jobs/jobs-rescore-button";
 import { JobRow } from "@/components/jobs/job-row";
 import { JobDrawer } from "@/components/jobs/job-drawer";
 import type { MorphRects } from "@/components/jobs/morph";
@@ -152,15 +153,21 @@ export function JobsView({
             genuinely re-ranks the pool — not just filters it.
           </p>
         </div>
-        <div className="flex items-center gap-[14px] font-mono text-[11.5px] text-ink-2">
-          <div>
-            <b className="text-[15px] font-semibold text-ink">{pool.length}</b>{" "}
-            in pool
+        <div className="flex items-end gap-[22px]">
+          <div className="flex items-center gap-[14px] pb-[3px] font-mono text-[11.5px] text-ink-2">
+            <div>
+              <b className="text-[15px] font-semibold text-ink">
+                {pool.length}
+              </b>{" "}
+              in pool
+            </div>
+            <span className="h-[26px] w-px bg-rule" />
+            <div>
+              <b className="text-[15px] font-semibold text-ink">{newCount}</b>{" "}
+              new
+            </div>
           </div>
-          <span className="h-[26px] w-px bg-rule" />
-          <div>
-            <b className="text-[15px] font-semibold text-ink">{newCount}</b> new
-          </div>
+          <JobsRescoreButton />
         </div>
       </header>
 
