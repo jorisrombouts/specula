@@ -1,10 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { SignJWT } from "jose";
-import {
-  E2E_API_URL,
-  E2E_SERVICE_JWT_SECRET,
-  E2E_USER_SUB,
-} from "../visual/auth";
+import { E2E_API_URL, E2E_SERVICE_JWT_SECRET } from "../visual/auth";
 
 // Runs under the `authed` project (baseURL :3001, DEV_AUTH_BYPASS=1). The API webServer
 // runs with PIPELINE_MODE=recorded (playwright.config.ts) so a triggered run completes
@@ -15,24 +11,26 @@ import {
 // shape ({error: "rate_limited", retryAfterS}) — enforced by rate_limit_guard in
 // routers/run.py and rendered by RateLimitedRoute in ratelimit.py.
 //
-// UI surfacing is deferred to M6 (decided) — the "Refresh now" flow doesn't show a
-// rate-limit message today. It's also not currently *possible* to assert that shape
-// through the Next BFF route: src/app/api/runs/route.ts calls bffFetch (lib/api/bff.ts),
-// which on any non-ok upstream response discards the status and body and throws a bare
-// `Error` — an uncaught throw in a Route Handler renders as a 500 with no body. Verified
-// locally: triggering twice through /api/runs yields 201 then a bodyless 500, never the
-// 429/RateLimitError shape. Fixing that pass-through is app code, out of scope for this
-// spec-only change.
+// IMPORTANT — dedicated user, not the demo tenant: this spec triggers runs purely to
+// exhaust a cooldown, which would otherwise leave the SHARED demo user rate-limited for
+// the very next spec (refresh.spec.ts, alphabetically adjacent), making its "Refresh now"
+// trigger 429 and its sidebar never reach "synced just now". The rate limit is per-user,
+// so we mint for a throwaway sub instead — the API auto-provisions it (deps.py) — and the
+// demo tenant stays clean. This isolation is the whole reason the spec passes a distinct
+// subject below.
 //
-// So this spec asserts the real contract at the layer that actually carries it: FastAPI
-// itself, over the network, via the harness's own uvicorn instance (the same one the BFF
-// proxies to) — not a mock. It mints a service JWT the same way bffFetch does (same
-// secret/issuer/audience/subject) and calls POST /api/v1/runs directly through
-// page.request.
+// Asserts the real contract at the layer that carries it: FastAPI over the network, via
+// the harness's own uvicorn (the same one the BFF proxies to). Mints a service JWT the same
+// way bffFetch does (secret/issuer/audience) and calls POST /api/v1/runs via page.request.
+const RATELIMIT_SUB = "e2e-ratelimit-user";
+
 async function serviceToken(): Promise<string> {
-  return new SignJWT({ email: "demo@specula.app", name: "Demo User" })
+  return new SignJWT({
+    email: "e2e-ratelimit@specula.app",
+    name: "E2E Rate Limit",
+  })
     .setProtectedHeader({ alg: "HS256" })
-    .setSubject(E2E_USER_SUB)
+    .setSubject(RATELIMIT_SUB)
     .setIssuer("specula-web")
     .setAudience("specula-api")
     .setIssuedAt()
@@ -62,16 +60,14 @@ test.describe("Run-trigger rate limit", () => {
     const headers = { Authorization: `Bearer ${await serviceToken()}` };
     const runsUrl = `${E2E_API_URL}/api/v1/runs`;
 
-    // First trigger: 201 if the seeded demo user is outside its cooldown, or already
-    // 429 if another spec triggered a run for the same shared demo tenant within the
-    // last run_cooldown_s (all authed specs share one demo user + one in-process
-    // limiter). Either is fine — not asserted on.
+    // First trigger for the dedicated rate-limit user: 201 on a fresh limiter, or already
+    // 429 if this same spec ran within the last run_cooldown_s against a reused server
+    // (the in-process limiter is shared per API process). Either is fine — not asserted on.
     await page.request.post(runsUrl, { headers });
 
-    // Second trigger, immediately after: whatever the first result was, this one is
-    // always inside an active cooldown window (either just started by our own first
-    // call above, or already under way from another spec's trigger) — so it
-    // deterministically rate-limits regardless of test execution order.
+    // Second trigger, immediately after: whatever the first result was, this one is always
+    // inside an active cooldown window (just started by our own first call above), so it
+    // deterministically rate-limits.
     const res = await page.request.post(runsUrl, { headers });
     expect(res.status()).toBe(429);
     const body = (await res.json()) as { error: string; retryAfterS: number };
