@@ -11,6 +11,7 @@ from specula_api.services.run import (
     get_run,
     latest_run,
     trigger_discovery_run,
+    trigger_refresh_run,
     trigger_rescore_run,
 )
 
@@ -49,6 +50,22 @@ async def start_rescore(
     out = RunOut.from_model(run)
     await session.commit()
     background_tasks.add_task(trigger_rescore_run, user_id, run.id)
+    return out
+
+
+@router.post("/refresh", status_code=201)
+async def start_refresh(
+    background_tasks: BackgroundTasks,
+    user_id: UUID = Depends(get_current_user_id),
+    _: None = Depends(rate_limit_guard),
+    session: AsyncSession = Depends(get_session),
+) -> RunOut:
+    """Re-crawl every tracked company for new postings, then extract + score them. Uses the run
+    rate-limit bucket — it's a heavy, deliberate full-corpus pass like a discovery run."""
+    run = await create_run(session, user_id, kind="refresh")
+    out = RunOut.from_model(run)
+    await session.commit()
+    background_tasks.add_task(trigger_refresh_run, user_id, run.id)
     return out
 
 

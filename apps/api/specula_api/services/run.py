@@ -91,12 +91,12 @@ async def get_run(session: AsyncSession, user_id: UUID, run_id: UUID) -> Run | N
 
 
 async def latest_run(session: AsyncSession, user_id: UUID) -> Run | None:
-    # Excludes rescore runs: this feeds the sidebar's "synced Nd ago · N new" indicator, which
-    # is about DISCOVERY (when we last looked for new jobs). A rescore finds no new jobs, so it
-    # must not supersede that line — it still lives in the DB + cost dashboard.
+    # Feeds the Approvals-page "checked Nd ago" indicator, which is about DISCOVERY (when we last
+    # looked for new companies). Rescore and refresh runs are job-side, not discovery, so they
+    # must not supersede that line — they still live in the DB + cost dashboard.
     run: Run | None = await session.scalar(
         select(Run)
-        .where(Run.user_id == user_id, Run.kind != "rescore")
+        .where(Run.user_id == user_id, Run.kind.notin_(["rescore", "refresh"]))
         .order_by(Run.created_at.desc())
         .limit(1)
     )
@@ -397,6 +397,87 @@ async def trigger_company_ingest(user_id: UUID, company_id: UUID) -> None:
         try:
             async with tenant_session(user_id) as session:
                 await ingest_company(session, user_id, company_id, deps)
+        finally:
+            await deps.aclose()
+    else:
+        # TODO(scheduler milestone): enqueue to Arq
+        pass
+
+
+async def _posting_count(session: AsyncSession, user_id: UUID) -> int:
+    return (
+        await session.scalar(
+            select(func.count()).select_from(Posting).where(Posting.user_id == user_id)
+        )
+    ) or 0
+
+
+async def refresh_all_jobs(session: AsyncSession, user_id: UUID, deps: PipelineDeps) -> int:
+    """Re-crawl every tracked (non-opted-out) company for NEW postings, extracting + scoring them
+    — the same per-company ingest that fires on approval, run for the whole registry at once.
+    Existing postings dedup out, so this surfaces only genuinely new jobs. Returns how many new
+    postings were found across all companies."""
+    company_ids = (
+        await session.scalars(
+            select(Company.id).where(Company.user_id == user_id, Company.opt_out.is_(False))
+        )
+    ).all()
+    before = await _posting_count(session, user_id)
+    for company_id in company_ids:
+        await ingest_company(session, user_id, company_id, deps)
+    after = await _posting_count(session, user_id)
+    return after - before
+
+
+async def run_refresh(
+    session: AsyncSession, user_id: UUID, run_id: UUID, deps: PipelineDeps
+) -> None:
+    """Re-crawl all tracked companies for new jobs, wrapped in a Run for the same budget guard +
+    observability as discovery (mirrors `run_rescore`). Per-company ingest keys its own cost
+    rows to the company, so this run's `cost_usd` rollup is 0 by design."""
+    run = await get_run(session, user_id, run_id)
+    if run is None:
+        return
+
+    run.status = "running"
+    run.started_at = datetime.now(UTC)
+    await session.flush()
+    await _seed_daily_baseline(session, user_id, deps)
+
+    with log_context(user_id=user_id, run_id=run_id):
+        _log.info("run.refresh.start", extra={"stage": "fetch"})
+        try:
+            new = await refresh_all_jobs(session, user_id, deps)
+            stats: dict[str, object] = {
+                "found": 0,
+                "new": new,
+                "closed": 0,
+                "low_conf_excluded": 0,
+                "errors": 0,
+                "scored": 0,
+            }
+            run.cost_usd = await _persist_costs(
+                session, user_id, deps, run_id=run_id, company_id=None
+            )
+            await finalize_run(session, run, stats, status="done")
+            _log.info("run.refresh.done", extra={"stage": "fetch", "new": new})
+        except BudgetExceeded as exc:
+            run.cost_usd = await _persist_costs(
+                session, user_id, deps, run_id=run_id, company_id=None
+            )
+            await finalize_run(session, run, _ERROR_STATS, status="error")
+            _log.warning("run.budget_exceeded", extra={"stage": "fetch", "scope": exc.scope})
+        except Exception:
+            await finalize_run(session, run, _ERROR_STATS, status="error")
+            raise
+
+
+async def trigger_refresh_run(user_id: UUID, run_id: UUID) -> None:
+    if settings.pipeline_execution == "inline":
+        deps = build_deps(settings)
+        try:
+            async with tenant_session(user_id) as session:
+                await run_refresh(session, user_id, run_id, deps)
         finally:
             await deps.aclose()
     else:

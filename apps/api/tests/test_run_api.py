@@ -71,6 +71,29 @@ async def test_post_rescore_creates_a_rescore_run_that_completes_inline(migrated
 
 
 @requires_db
+async def test_post_refresh_creates_a_refresh_run_that_completes_inline(migrated_db: None) -> None:
+    headers = _auth_header()
+    transport = ASGITransport(app=create_app())
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        res = await client.post("/api/v1/runs/refresh", headers=headers)
+        assert res.status_code == 201
+        body = res.json()
+        assert body["kind"] == "refresh"
+        assert body["status"] == "queued"
+
+        got = await client.get(f"/api/v1/runs/{body['id']}", headers=headers)
+        assert got.status_code == 200
+        run = got.json()
+        assert run["status"] == "done"
+        assert run["stats"]["new"] == 0  # fresh user, no tracked companies to crawl
+
+        # A refresh must NOT surface as the discovery "checked" run.
+        latest = await client.get("/api/v1/runs/latest", headers=headers)
+        assert latest.status_code == 200
+        assert latest.json() is None
+
+
+@requires_db
 async def test_get_latest_run_returns_null_when_none_exist(migrated_db: None) -> None:
     transport = ASGITransport(app=create_app())
     async with AsyncClient(transport=transport, base_url="http://test") as client:

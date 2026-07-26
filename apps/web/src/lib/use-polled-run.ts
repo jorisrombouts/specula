@@ -2,27 +2,31 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Run } from "@specula/shared-types";
-import { triggerRescore, fetchRun } from "@/lib/api/runs";
+import { fetchRun } from "@/lib/api/runs";
 
 const POLL_MS = 3000;
 
-// Re-scores every existing job against the CURRENT profile (scores are otherwise frozen at the
-// moment each company was approved). Triggers the rescore run, polls it to completion, and
-// exposes a busy flag, a result note, and a surfaced error. `onDone` fires once on a successful
-// terminal run (e.g. so a page can refresh its now-re-scored data).
-export function useRescore(opts?: { onDone?: (run: Run) => void }): {
+// Triggers a long-running Run (re-score / refresh), polls it to completion, and exposes a busy
+// flag, a result note (from `describe`), and a surfaced error. `onDone` fires once on a
+// successful terminal run (e.g. so a page can refresh its now-updated data).
+export function usePolledRun(opts: {
+  trigger: () => Promise<Run>;
+  describe: (run: Run) => string;
+  failNote?: string;
+  onDone?: (run: Run) => void;
+}): {
   busy: boolean;
   note: string | null;
   error: string | null;
-  rescore: () => void;
+  start: () => void;
 } {
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const onDoneRef = useRef(opts?.onDone);
+  const optsRef = useRef(opts);
   useEffect(() => {
-    onDoneRef.current = opts?.onDone;
+    optsRef.current = opts;
   });
 
   const stopPolling = useCallback(() => {
@@ -38,20 +42,18 @@ export function useRescore(opts?: { onDone?: (run: Run) => void }): {
     (run: Run) => {
       stopPolling();
       setBusy(false);
+      const { describe, failNote = "Action failed.", onDone } = optsRef.current;
       if (run.status === "error") {
-        setError("Re-score failed.");
+        setError(failNote);
         return;
       }
-      const n = run.stats.scored;
-      setNote(
-        `Re-scored ${n} job${n === 1 ? "" : "s"} with your current profile.`,
-      );
-      onDoneRef.current?.(run);
+      setNote(describe(run));
+      onDone?.(run);
     },
     [stopPolling],
   );
 
-  const rescore = useCallback(async () => {
+  const start = useCallback(async () => {
     if (busy) return;
     stopPolling();
     setError(null);
@@ -60,9 +62,10 @@ export function useRescore(opts?: { onDone?: (run: Run) => void }): {
 
     let run: Run;
     try {
-      run = await triggerRescore();
+      run = await optsRef.current.trigger();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Re-score failed.");
+      const fallback = optsRef.current.failNote ?? "Action failed.";
+      setError(e instanceof Error ? e.message : fallback);
       setBusy(false);
       return;
     }
@@ -84,5 +87,5 @@ export function useRescore(opts?: { onDone?: (run: Run) => void }): {
     }, POLL_MS);
   }, [busy, settle, stopPolling]);
 
-  return { busy, note, error, rescore };
+  return { busy, note, error, start };
 }

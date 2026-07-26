@@ -43,7 +43,15 @@ export async function triggerRescore(): Promise<Run> {
   throw await triggerError(res, "Re-score failed");
 }
 
-// Client-side: fetch one run by id — used to poll a rescore run to its terminal status.
+// Client-side: re-crawl all tracked companies for new postings (POST /runs/refresh). Returns
+// the created refresh run (status "queued"); poll fetchRun to follow it to completion.
+export async function triggerRefresh(): Promise<Run> {
+  const res = await fetch("/api/runs/refresh", { method: "POST" });
+  if (res.ok) return res.json() as Promise<Run>;
+  throw await triggerError(res, "Refresh failed");
+}
+
+// Client-side: fetch one run by id — used to poll a rescore/refresh run to its terminal status.
 export async function fetchRun(id: string): Promise<Run> {
   const res = await fetch(`/api/runs/${encodeURIComponent(id)}`);
   if (!res.ok) throw new Error(`Couldn't load run (${res.status}).`);

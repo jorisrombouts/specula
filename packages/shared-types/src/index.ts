@@ -109,7 +109,7 @@ export interface JobsResponse { jobs: Job[]; lenses: LensSummary[]; sort: JobSor
 
 export interface RunStats { found: number; new: number; closed: number; lowConfExcluded: number; errors: number; scored: number }
 export interface Run {
-  id: string; kind: "scheduled" | "on_demand" | "rescore";
+  id: string; kind: "scheduled" | "on_demand" | "rescore" | "refresh";
   status: "queued" | "running" | "done" | "error";
   startedAt: string | null; finishedAt: string | null;
   stats: RunStats; createdAt: string; cost?: RunCost | null;

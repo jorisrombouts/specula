@@ -13,7 +13,7 @@ import { usePrefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
 import { useTweaks } from "@/lib/tweaks";
 import { originLabel } from "@/lib/lens-catalog";
 import { LensBar } from "@/components/jobs/lens-bar";
-import { JobsRescoreButton } from "@/components/jobs/jobs-rescore-button";
+import { JobsRefreshButton } from "@/components/jobs/jobs-refresh-button";
 import { JobRow } from "@/components/jobs/job-row";
 import { JobDrawer } from "@/components/jobs/job-drawer";
 import type { MorphRects } from "@/components/jobs/morph";
@@ -167,7 +167,7 @@ export function JobsView({
               new
             </div>
           </div>
-          <JobsRescoreButton />
+          <JobsRefreshButton />
         </div>
       </header>
 
