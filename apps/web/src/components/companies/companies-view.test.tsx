@@ -10,6 +10,8 @@ import { CompaniesView } from "@/components/companies/companies-view";
 import type { CompanyRow } from "@/lib/api/companies";
 import { companies } from "@/lib/seed/data";
 
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
+
 afterEach(cleanup);
 afterEach(() => vi.restoreAllMocks());
 

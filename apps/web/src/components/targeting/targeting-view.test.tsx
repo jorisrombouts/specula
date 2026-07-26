@@ -1,15 +1,20 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
-import { TargetingView } from "@/components/targeting/targeting-view";
 
 vi.mock("@/lib/api/bff", async () => {
   const { mockBffFetch } = await import("@/lib/api/test-fixtures");
   return { bffFetch: mockBffFetch };
 });
+const refresh = vi.fn();
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh }) }));
 
+const { TargetingView } = await import("@/components/targeting/targeting-view");
 const { getTargeting } = await import("@/lib/api/targeting");
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  refresh.mockReset();
+});
 const t = await getTargeting();
 
 describe("TargetingView", () => {
@@ -63,6 +68,22 @@ describe("TargetingView", () => {
     const [, init] = fetchMock.mock.calls[0];
     const body = JSON.parse(init!.body as string);
     expect(body.seniority).toContain("Principal");
+    fetchMock.mockRestore();
+  });
+
+  // Same client-cache invalidation the candidate profile needs: Next reuses this page's
+  // rendered payload on browser back/forward, so without a refresh a save→leave→Back
+  // round-trip re-renders the stale pre-save targeting.
+  it("clears the client cache after save so browser Back isn't stale", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(JSON.stringify({}), { status: 200 }));
+    render(<TargetingView targeting={t} />);
+    fireEvent.click(screen.getByRole("button", { name: "Principal" }));
+    fireEvent.click(screen.getByText("Save targeting"));
+    await screen.findByText("Saved.");
+
+    expect(refresh).toHaveBeenCalled();
     fetchMock.mockRestore();
   });
 });

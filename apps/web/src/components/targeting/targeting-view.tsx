@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import type { Targeting } from "@specula/shared-types";
 import { SENIORITY_LEVELS } from "@specula/shared-types";
 import { TagEditor } from "@/components/atoms/tag-editor";
@@ -11,6 +12,7 @@ import { ROLE_TITLES } from "@/lib/role-titles-catalog";
 import { saveTargeting, type TargetingPatch } from "@/lib/api/targeting";
 
 export function TargetingView({ targeting: t }: { targeting: Targeting }) {
+  const router = useRouter();
   const [form, setForm] = useState<TargetingPatch>(t);
   const [baseline, setBaseline] = useState<TargetingPatch>(t);
   const [saving, setSaving] = useState(false);
@@ -31,6 +33,10 @@ export function TargetingView({ targeting: t }: { targeting: Targeting }) {
       await saveTargeting(form);
       setBaseline(form);
       setJustSaved(true);
+      // Drop this route's cached RSC payload. Next reuses it verbatim on browser
+      // back/forward (unlike a <Link> nav, which refetches), so without this a
+      // save→leave→Back round-trip re-renders the stale pre-save targeting.
+      router.refresh();
     } finally {
       setSaving(false);
     }

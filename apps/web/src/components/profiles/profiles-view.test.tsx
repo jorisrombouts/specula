@@ -9,6 +9,7 @@ import {
 } from "@testing-library/react";
 import { ProfilesView } from "@/components/profiles/profiles-view";
 
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 vi.mock("@/lib/api/bff", async () => {
   const { mockBffFetch } = await import("@/lib/api/test-fixtures");
   return { bffFetch: mockBffFetch };

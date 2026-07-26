@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import type { LensSummary } from "@specula/shared-types";
 import { Toggle } from "@/components/atoms/toggle";
 import { Button } from "@/components/atoms/button";
@@ -43,6 +44,7 @@ type Row = { lens: LensSummary; editing: boolean; isNew: boolean; key: string };
 let tmp = 0;
 
 export function ProfilesView({ lenses: seed }: { lenses: LensSummary[] }) {
+  const router = useRouter();
   const defaults = seed.filter((l) => l.isDefault);
   const [rows, setRows] = useState<Row[]>(() =>
     seed
@@ -82,6 +84,8 @@ export function ProfilesView({ lenses: seed }: { lenses: LensSummary[] }) {
       ? setRows((rs) => rs.filter((r) => r.key !== row.key))
       : setRow(row.key, { editing: false });
 
+  // After each lens mutation, drop this route's cached RSC payload — Next reuses it verbatim on
+  // browser back/forward, so without this a save→leave→Back round-trip re-renders stale lenses.
   const save = async (row: Row, patch: LensPatch) => {
     if (row.isNew) {
       const created = await createLens(patch);
@@ -96,17 +100,20 @@ export function ProfilesView({ lenses: seed }: { lenses: LensSummary[] }) {
       const updated = await updateLens(row.lens.id, patch);
       setRow(row.key, { lens: updated, editing: false });
     }
+    router.refresh();
   };
 
   const remove = async (row: Row) => {
     if (!row.isNew) await deleteLens(row.lens.id);
     setRows((rs) => rs.filter((r) => r.key !== row.key));
+    router.refresh();
   };
 
   const toggle = async (row: Row) => {
     const active = !row.lens.active;
     setRow(row.key, { lens: { ...row.lens, active } });
     await updateLens(row.lens.id, { active });
+    router.refresh();
   };
 
   return (

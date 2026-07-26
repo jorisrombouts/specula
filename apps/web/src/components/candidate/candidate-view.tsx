@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import type { Candidate, SkillsGap, Visa } from "@specula/shared-types";
 import { VISA_OPTIONS } from "@specula/shared-types";
 import { TagEditor } from "@/components/atoms/tag-editor";
@@ -41,6 +42,7 @@ export function CandidateView({
     [c],
   );
 
+  const router = useRouter();
   const [form, setForm] = useState<CandidatePatch>(initial);
   const [baseline, setBaseline] = useState<CandidatePatch>(initial);
   const [saving, setSaving] = useState(false);
@@ -60,14 +62,35 @@ export function CandidateView({
     form.skills.some((x) => x.toLowerCase() === s.toLowerCase());
   const visibleGap = skillsGap.filter((g) => !hasSkill(g.skill));
 
-  const handleSave = async () => {
+  // `PUT /candidate` is a full replace, so every save sends the whole form.
+  const persist = async (next: CandidatePatch) => {
     setSaving(true);
     try {
-      await saveCandidate(form);
-      setBaseline(form);
+      await saveCandidate(next);
+      setBaseline(next);
       setJustSaved(true);
+      // Drop this route's cached RSC payload. Next reuses it verbatim on browser
+      // back/forward (unlike a <Link> nav, which refetches), so without this a
+      // save→leave→Back round-trip re-renders the stale pre-save profile.
+      router.refresh();
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleSave = () => persist(form);
+
+  // The gap row disappearing reads as "added", so make the click actually add it:
+  // save straight away rather than staging behind the Save button. On failure the
+  // optimistic change is rolled back so the row reappears instead of lying.
+  const addGapSkill = async (skill: string) => {
+    const prev = form;
+    const next = { ...form, skills: [...form.skills, skill] };
+    setForm(next);
+    try {
+      await persist(next);
+    } catch {
+      setForm(prev);
     }
   };
 
@@ -241,8 +264,9 @@ export function CandidateView({
                 <button
                   type="button"
                   aria-label={`add ${g.skill} to skills`}
-                  onClick={() => set("skills", [...form.skills, g.skill])}
-                  className="rounded-[7px] border border-rule-2 bg-card px-[9px] py-[5px] text-[11px] text-accent-ink hover:border-accent hover:bg-accent-bg"
+                  onClick={() => addGapSkill(g.skill)}
+                  disabled={saving}
+                  className="rounded-[7px] border border-rule-2 bg-card px-[9px] py-[5px] text-[11px] text-accent-ink hover:border-accent hover:bg-accent-bg disabled:opacity-50"
                 >
                   + add
                 </button>

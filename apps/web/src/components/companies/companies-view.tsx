@@ -1,11 +1,13 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Chip } from "@/components/atoms/chip";
 import { CompanyLogo } from "@/components/atoms/company-logo";
 import { optOutCompany, type CompanyRow } from "@/lib/api/companies";
 
 export function CompaniesView({ companies }: { companies: CompanyRow[] }) {
+  const router = useRouter();
   const [q, setQ] = useState("");
   const [removed, setRemoved] = useState<Set<string>>(new Set());
   const query = q.toLowerCase();
@@ -88,12 +90,15 @@ export function CompaniesView({ companies }: { companies: CompanyRow[] }) {
             const remove = () => {
               setRemoved((prev) => new Set(prev).add(rowKey));
               if (c.id) {
-                optOutCompany(c.id).catch(() =>
-                  setRemoved((prev) => {
-                    const next = new Set(prev);
-                    next.delete(rowKey);
-                    return next;
-                  }),
+                optOutCompany(c.id).then(
+                  // Drop the cached RSC payload so a Back nav doesn't show the removed company.
+                  () => router.refresh(),
+                  () =>
+                    setRemoved((prev) => {
+                      const next = new Set(prev);
+                      next.delete(rowKey);
+                      return next;
+                    }),
                 );
               }
             };

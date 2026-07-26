@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import type { Job, Candidate, JobStatus } from "@specula/shared-types";
 import type { MorphRects } from "@/components/jobs/morph";
 import type { Mstyle } from "@/lib/tweaks-init";
@@ -34,17 +35,24 @@ export function JobDrawer({
   mstyle: Mstyle;
   onPatchState?: (id: string, patch: JobStatePatch) => void | Promise<unknown>;
 }) {
+  const router = useRouter();
   const reduce = usePrefersReducedMotion();
   // Optimistic local state for the posting-state controls; each edit fires a PATCH.
   const [status, setStatus] = useState<JobStatus | null>(job.status);
   const [feedback, setFeedback] = useState<"positive" | "negative" | null>(
     null,
   );
-  // Fire the PATCH; if it rejects (e.g. network error), revert the optimistic value
-  // so the UI never claims a state that didn't persist.
+  // Fire the PATCH. On success, drop the cached RSC payload so a Back nav to /jobs shows the new
+  // state (Next reuses the stale cache otherwise). On failure, revert the optimistic value so the
+  // UI never claims a state that didn't persist.
   const patch = (p: JobStatePatch, revert?: () => void) => {
     const result = onPatchState(job.id, p);
-    if (result instanceof Promise) result.catch(() => revert?.());
+    if (result instanceof Promise) {
+      result.then(
+        () => router.refresh(),
+        () => revert?.(),
+      );
+    }
   };
   const handleStatus = (s: JobStatus) => {
     const prev = status;

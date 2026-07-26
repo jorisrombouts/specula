@@ -2,6 +2,7 @@ import { describe, it, expect, afterEach, vi } from "vitest";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import { JobDrawer } from "@/components/jobs/job-drawer";
 
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 vi.mock("@/lib/api/bff", async () => {
   const { mockBffFetch } = await import("@/lib/api/test-fixtures");
   return { bffFetch: mockBffFetch };
