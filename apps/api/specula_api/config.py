@@ -34,6 +34,11 @@ class Settings(BaseSettings):
 
     openai_api_key: str = ""
     openai_search_model: str = "gpt-4o"
+    # Model for the discovery web_search. Kept a separate knob, but MUST support the web_search
+    # `filters` param (allowed_domains) that keeps results to ATS hosts — gpt-4o-mini rejects it
+    # ("Parameter 'filters' not supported"), so gpt-4o stays for now. The cost win comes from the
+    # synonym-collapse + exhaustion cache (far fewer searches), not a cheaper model.
+    openai_discovery_model: str = "gpt-4o"
     openai_extract_model: str = "gpt-4o-mini"
     openai_embed_model: str = "text-embedding-3-small"
     openai_rationale_model: str = "gpt-4o-mini"
@@ -42,8 +47,9 @@ class Settings(BaseSettings):
     crawl_per_domain_delay_ms: int = 1000
     crawl_timeout_s: float = 15.0
     # Max discovery web-searches per run (lens seeds + role/lens combos, deduped/capped).
-    # One OpenAI web_search call each — the main discovery cost knob. Env-tunable.
-    discovery_max_searches: int = 20
+    # One OpenAI web_search call each — the main discovery cost knob. Global default; a user can
+    # override it 1..20 via UserSettings.discovery_max_searches (Settings page).
+    discovery_max_searches: int = 10
     # Cap the per-company LLM extraction/scoring: a big board (Greenhouse can return 600+
     # jobs) would otherwise fire one extraction call per posting. Shells are still all
     # crawled (cheap); only this many are LLM-extracted + scored per ingest.

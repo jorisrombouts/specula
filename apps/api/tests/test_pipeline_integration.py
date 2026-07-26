@@ -156,7 +156,7 @@ async def _seed_targeting_and_pool(session: AsyncSession, user_id: UUID) -> tupl
     session.add(lens)
     await session.flush()
     [query] = build_seed_queries(["Backend Engineer"], [lens], cap=5)
-    return lens, query
+    return lens, query.text
 
 
 @requires_db

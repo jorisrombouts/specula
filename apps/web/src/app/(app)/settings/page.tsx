@@ -1,5 +1,7 @@
 import { SettingsView } from "@/components/settings/settings-view";
+import { getDiscoverySettings } from "@/lib/api/discovery-settings";
 
-export default function SettingsPage() {
-  return <SettingsView />;
+export default async function SettingsPage() {
+  const { maxSearches } = await getDiscoverySettings();
+  return <SettingsView initialMaxSearches={maxSearches} />;
 }

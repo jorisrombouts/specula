@@ -1,6 +1,7 @@
 """Discovery stage: seed-query the web for ATS-hosted job boards and stage them as approvals."""
 
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from urllib.parse import urlsplit
 from uuid import UUID
 
@@ -8,12 +9,13 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from specula_api.db.models import Approval, Company, Lens, Targeting
+from specula_api.db.models import Approval, Company, DiscoveryQueryStat, Lens, Targeting
 from specula_api.observability import get_logger
 from specula_api.pipeline.deps import PipelineDeps
 from specula_api.pipeline.openai_client import Source
 from specula_api.pipeline.source import ATS_ALLOWED_DOMAINS, detect_ats
 from specula_api.pipeline.util import favicon_url
+from specula_api.services.discovery_settings import effective_max_searches
 
 _log = get_logger("pipeline.discovery")
 
@@ -74,33 +76,77 @@ def _region_hint(lens: Lens) -> str:
     return ""
 
 
-def build_seed_queries(role_titles: list[str], lenses: list[Lens], *, cap: int) -> list[str]:
-    """Effective ATS job-board search queries. Each active lens's own discovery seeds are
-    high-signal, user-crafted queries and go FIRST (verbatim); then the generated
-    '<role> jobs <region hint>' combos (role titles outer, so the cap spans lenses).
-    Deduped, capped at `cap`. The web_search tool is already domain-filtered to ATS hosts,
-    so a query only needs the role/seed + a location cue, not a pile of synonyms."""
+@dataclass(frozen=True)
+class SeedQuery:
+    text: str
+    exhaustible: bool  # False for user lens seeds (always run); True for generated role queries
+
+
+def build_seed_queries(role_titles: list[str], lenses: list[Lens], *, cap: int) -> list[SeedQuery]:
+    """Effective ATS job-board searches, deduped and capped at `cap`. Each active lens's own
+    seeds run FIRST, verbatim (user-crafted, high-signal, never parked by the exhaustion cache).
+    Then ONE combined role query per active lens — the role titles are near-synonyms, so a single
+    search per lens finds the same companies as one-per-title at a fraction of the cost. The
+    web_search tool is domain-filtered to ATS hosts, so a query only needs the roles + a location
+    cue, not a pile of synonyms."""
     active = [lens for lens in lenses if lens.active]
-    queries: list[str] = []
+    out: list[SeedQuery] = []
     seen: set[str] = set()
 
-    def _add(query: str) -> bool:
+    def _add(text: str, *, exhaustible: bool) -> bool:
         """Append a deduped, non-empty query; return True once the cap is full."""
-        query = query.strip()
-        if query and query not in seen:
-            seen.add(query)
-            queries.append(query)
-        return len(queries) >= cap
+        text = text.strip()
+        if text and text not in seen:
+            seen.add(text)
+            out.append(SeedQuery(text, exhaustible))
+        return len(out) >= cap
 
     for lens in active:
         for seed in lens.seeds:
-            if _add(seed):
-                return queries
-    for role_title in role_titles:
+            if _add(seed, exhaustible=False):
+                return out
+    roles = " / ".join(r.strip() for r in role_titles if r.strip())
+    if roles:
         for lens in active:
-            if _add(" ".join(p for p in (role_title.strip(), "jobs", _region_hint(lens)) if p)):
-                return queries
-    return queries
+            combined = " ".join(p for p in (roles, "jobs", _region_hint(lens)) if p)
+            if _add(combined, exhaustible=True):
+                return out
+    return out
+
+
+# Exhaustion cache: a query that finds 0 new companies this many runs in a row is "played out"
+# and parked for the cooldown before it's retried once (new postings appear over time).
+_EXHAUSTION_THRESHOLD = 2
+_COOLDOWN = timedelta(days=7)
+
+
+async def _exhausted_queries(session: AsyncSession, user_id: UUID, now: datetime) -> set[str]:
+    """Query texts to skip this run: emptied out (>= threshold) and still inside the cooldown."""
+    rows = await session.scalars(
+        select(DiscoveryQueryStat).where(DiscoveryQueryStat.user_id == user_id)
+    )
+    return {
+        r.query
+        for r in rows
+        if r.consecutive_empty_runs >= _EXHAUSTION_THRESHOLD and now - r.last_run_at < _COOLDOWN
+    }
+
+
+async def _record_query_stats(
+    session: AsyncSession, user_id: UUID, new_by_query: dict[str, int], now: datetime
+) -> None:
+    """Update each executed query's exhaustion memory: reset its empty-streak when it found new
+    companies, else extend it."""
+    for query, new_count in new_by_query.items():
+        stat = await session.get(DiscoveryQueryStat, (user_id, query))
+        if stat is None:
+            stat = DiscoveryQueryStat(user_id=user_id, query=query)
+            session.add(stat)
+            prev_empty = 0
+        else:
+            prev_empty = stat.consecutive_empty_runs
+        stat.last_run_at = now
+        stat.consecutive_empty_runs = 0 if new_count > 0 else prev_empty + 1
 
 
 async def discover(
@@ -110,18 +156,26 @@ async def discover(
     role_titles = targeting.role_titles if targeting is not None else []
 
     lenses = list((await session.scalars(select(Lens).where(Lens.user_id == user_id))).all())
-    queries = build_seed_queries(role_titles, lenses, cap=deps.settings.discovery_max_searches)
+    cap = await effective_max_searches(session, user_id, deps.settings)
+    queries = build_seed_queries(role_titles, lenses, cap=cap)
     _log.info("pipeline.stage", extra={"stage": "discovery", "queries": len(queries)})
     if not queries:
         return DiscoverResult()
 
     existing_domains = await _existing_domains(session, user_id)
+    skip = await _exhausted_queries(session, user_id, deps.now())
 
     found = 0
     staged: list[_Candidate] = []
     new = 0
     errors = 0
-    for query in queries:
+    new_by_query: dict[str, int] = {}
+    for seed_query in queries:
+        query = seed_query.text
+        # A played-out auto-role query (all its companies already known) is parked until its
+        # cooldown lapses; user seeds always run.
+        if seed_query.exhaustible and query in skip:
+            continue
         try:
             sources = await deps.openai.discover_sources(
                 [query], allowed_domains=ATS_ALLOWED_DOMAINS
@@ -129,6 +183,7 @@ async def discover(
         except Exception:
             errors += 1
             continue
+        new_by_query.setdefault(query, 0)  # ran successfully → record its outcome
 
         for source in sources:
             try:
@@ -144,6 +199,9 @@ async def discover(
             existing_domains.add(candidate.domain)
             staged.append(candidate)
             new += 1
+            new_by_query[query] += 1
+
+    await _record_query_stats(session, user_id, new_by_query, deps.now())
 
     for candidate, description in zip(
         staged, await _resolve_descriptions(staged, deps), strict=True

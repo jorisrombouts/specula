@@ -123,6 +123,7 @@ export async function mockBffFetch<T = unknown>(
   if (path === "/skills-gap") return skillsGapApiFixture as T;
   if (path === "/lenses") return lensesApiFixture as T;
   if (path === "/tweaks") return { ...tweaksApiFixture, ...body } as T;
+  if (path === "/settings/discovery") return { maxSearches: 10, ...body } as T;
   if (/^\/jobs\/[^/]+\/state$/.test(path)) {
     return {
       status: null,

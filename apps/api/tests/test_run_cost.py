@@ -121,7 +121,7 @@ async def _seed(session: AsyncSession, user_id: UUID) -> str:
     session.add(lens)
     await session.flush()
     [query] = build_seed_queries(["Backend Engineer"], [lens], cap=5)
-    return query
+    return query.text
 
 
 def _expected_cost(row: LlmCost) -> Decimal:

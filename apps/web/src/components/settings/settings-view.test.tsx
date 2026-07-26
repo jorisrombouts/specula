@@ -19,7 +19,7 @@ afterEach(() => {
 
 async function renderView() {
   const { SettingsView } = await import("@/components/settings/settings-view");
-  render(<SettingsView />);
+  render(<SettingsView initialMaxSearches={10} />);
 }
 
 describe("SettingsView", () => {

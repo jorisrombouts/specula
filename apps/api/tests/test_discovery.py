@@ -13,6 +13,7 @@ from specula_api.db.models import Approval, Company, Lens, Targeting
 from specula_api.pipeline.deps import PipelineDeps
 from specula_api.pipeline.discovery import (
     DiscoverResult,
+    SeedQuery,
     _region_hint,
     _resolve_candidate,
     build_seed_queries,
@@ -115,10 +116,10 @@ async def test_discover_writes_new_approvals_for_resolved_candidates(
 
     queries = build_seed_queries(["ML Engineer"], [lens], cap=5)
     # the lens's own seed ("fintech") is now used, and comes first (verbatim)
-    assert queries == ["fintech", "ML Engineer jobs Remote EU"]
+    assert [q.text for q in queries] == ["fintech", "ML Engineer jobs Remote EU"]
 
     sources_by_query = {
-        queries[0]: [
+        queries[0].text: [
             Source(url="https://boards.greenhouse.io/acme/jobs/123", title="Acme role"),
             Source(url="https://jobs.lever.co/beta-corp/456", title="Beta role"),
         ]
@@ -140,7 +141,7 @@ async def test_discover_writes_new_approvals_for_resolved_candidates(
     acme = by_domain["acme.boards.greenhouse.io"]
     assert acme.ats == "greenhouse"
     assert acme.name == "Acme"
-    assert acme.found_query == queries[0]
+    assert acme.found_query == queries[0].text
     assert acme.logo_url == "https://icons.duckduckgo.com/ip3/acme.boards.greenhouse.io.ico"
     assert acme.decision is None
 
@@ -165,7 +166,7 @@ async def test_discover_records_the_real_careers_url_on_the_approval(
     lens = await _seed_targeting_and_lens(db_session, user.id)
     queries = build_seed_queries(["ML Engineer"], [lens], cap=5)
     url = "https://boards.greenhouse.io/acme/jobs/123"
-    deps = _deps(_StubOpenAI({queries[0]: [Source(url=url, title="Acme role")]}))
+    deps = _deps(_StubOpenAI({queries[0].text: [Source(url=url, title="Acme role")]}))
 
     await discover(db_session, user.id, uuid4(), deps)
 
@@ -181,7 +182,9 @@ async def test_discover_is_idempotent_on_rerun(db_session: AsyncSession) -> None
     lens = await _seed_targeting_and_lens(db_session, user.id)
     queries = build_seed_queries(["ML Engineer"], [lens], cap=5)
     sources_by_query = {
-        queries[0]: [Source(url="https://boards.greenhouse.io/acme/jobs/123", title="Acme role")]
+        queries[0].text: [
+            Source(url="https://boards.greenhouse.io/acme/jobs/123", title="Acme role")
+        ]
     }
     deps = _deps(_StubOpenAI(sources_by_query))
 
@@ -213,7 +216,9 @@ async def test_discover_skips_candidate_whose_domain_is_already_a_company(
     await db_session.flush()
 
     sources_by_query = {
-        queries[0]: [Source(url="https://boards.greenhouse.io/acme/jobs/123", title="Acme role")]
+        queries[0].text: [
+            Source(url="https://boards.greenhouse.io/acme/jobs/123", title="Acme role")
+        ]
     }
     deps = _deps(_StubOpenAI(sources_by_query))
 
@@ -241,62 +246,47 @@ async def test_discover_returns_zero_result_without_role_titles(db_session: Asyn
 # --- build_seed_queries ---------------------------------------------------------
 
 
-def test_build_seed_queries_composes_role_and_region_hint() -> None:
-    lens = Lens(user_id=uuid4(), name="Fintech", seeds=["fintech"], scope="Remote EU", active=True)
-    assert build_seed_queries(["Staff Backend Engineer"], [lens], cap=5) == [
-        "fintech",  # lens seed first (verbatim)
-        "Staff Backend Engineer jobs Remote EU",
+def test_build_seed_queries_one_combined_role_query_per_lens() -> None:
+    """Near-synonym role titles collapse into ONE combined search per lens (not one per title)."""
+    lens = Lens(user_id=uuid4(), name="Remote EU", seeds=[], scope="Remote EU", active=True)
+    assert build_seed_queries(["ML Engineer", "Data Scientist"], [lens], cap=10) == [
+        SeedQuery("ML Engineer / Data Scientist jobs Remote EU", exhaustible=True),
     ]
 
 
-def test_build_seed_queries_uses_lens_seeds_first() -> None:
-    """A lens's own discovery seeds are high-signal, user-crafted queries: they enter the
-    query list verbatim and ahead of the generated '<role> jobs <hint>' combos."""
-    lens = Lens(user_id=uuid4(), name="Fintech", seeds=["fintech"], scope="ES", active=True)
-    assert build_seed_queries(["ML Engineer"], [lens], cap=5) == [
-        "fintech",
-        "ML Engineer jobs Spain",
+def test_build_seed_queries_seeds_run_first_and_are_not_exhaustible() -> None:
+    """A lens's own seeds enter verbatim, ahead of the generated role query, and are flagged
+    non-exhaustible (the exhaustion cache never parks user-crafted seeds)."""
+    lens = Lens(user_id=uuid4(), name="Spain", seeds=["fintech ML Madrid"], scope="ES", active=True)
+    assert build_seed_queries(["ML Engineer"], [lens], cap=10) == [
+        SeedQuery("fintech ML Madrid", exhaustible=False),
+        SeedQuery("ML Engineer jobs Spain", exhaustible=True),
+    ]
+
+
+def test_build_seed_queries_one_combined_query_per_active_lens() -> None:
+    de = Lens(user_id=uuid4(), name="DE", seeds=[], scope="DE", active=True)
+    es = Lens(user_id=uuid4(), name="ES", seeds=[], scope="ES", active=True)
+    out = build_seed_queries(["ML Engineer", "AI Engineer"], [de, es], cap=10)
+    assert [q.text for q in out] == [
+        "ML Engineer / AI Engineer jobs Germany",
+        "ML Engineer / AI Engineer jobs Spain",
     ]
 
 
 def test_build_seed_queries_only_includes_active_lenses() -> None:
-    active = Lens(user_id=uuid4(), name="A", seeds=["fintech"], scope="ES", active=True)
-    inactive = Lens(user_id=uuid4(), name="B", seeds=["climate"], scope="DE", active=False)
-    queries = build_seed_queries(["ML Engineer"], [active, inactive], cap=10)
-    # the inactive lens contributes neither its seed nor its scope
-    assert queries == ["fintech", "ML Engineer jobs Spain"]
-
-
-def test_build_seed_queries_dedups_identical_compositions() -> None:
-    lens1 = Lens(user_id=uuid4(), name="A", seeds=["fintech"], scope="ES", active=True)
-    lens2 = Lens(user_id=uuid4(), name="B", seeds=["climate"], scope="ES", active=True)
-    queries = build_seed_queries(["ML Engineer"], [lens1, lens2], cap=10)
-    # both distinct seeds kept; the identical 'ML Engineer jobs Spain' composition appears once
-    assert queries == ["fintech", "climate", "ML Engineer jobs Spain"]
+    active = Lens(user_id=uuid4(), name="A", seeds=[], scope="ES", active=True)
+    inactive = Lens(user_id=uuid4(), name="B", seeds=[], scope="DE", active=False)
+    out = build_seed_queries(["ML Engineer"], [active, inactive], cap=10)
+    assert [q.text for q in out] == ["ML Engineer jobs Spain"]
 
 
 def test_build_seed_queries_respects_cap() -> None:
-    lens1 = Lens(user_id=uuid4(), name="A", seeds=["fintech"], scope="ES", active=True)
-    lens2 = Lens(user_id=uuid4(), name="B", seeds=["climate"], scope="DE", active=True)
-    queries = build_seed_queries(["ML Engineer", "Data Scientist"], [lens1, lens2], cap=3)
-    assert len(queries) == 3
-
-
-def test_build_seed_queries_role_titles_are_the_outer_loop() -> None:
-    """Every active lens is queried for the first role title before moving to the next role
-    title — this is what gives the first `cap` queries variety across roles when the cap is
-    hit mid-role, instead of exhausting one role across every lens first."""
-    lens_de = Lens(user_id=uuid4(), name="A", seeds=["fintech"], scope="DE", active=True)
-    lens_es = Lens(user_id=uuid4(), name="B", seeds=["climate"], scope="ES", active=True)
-    queries = build_seed_queries(["ML Engineer", "Data Scientist"], [lens_de, lens_es], cap=10)
-    assert queries == [
-        "fintech",  # lens seeds first, in lens order
-        "climate",
-        "ML Engineer jobs Germany",
-        "ML Engineer jobs Spain",
-        "Data Scientist jobs Germany",
-        "Data Scientist jobs Spain",
+    lenses = [
+        Lens(user_id=uuid4(), name=f"L{i}", seeds=[f"seed{i}"], scope="ES", active=True)
+        for i in range(5)
     ]
+    assert len(build_seed_queries(["ML Engineer"], lenses, cap=3)) == 3
 
 
 # --- _region_hint ---------------------------------------------------------------
@@ -411,7 +401,7 @@ async def _discover_two(db_session: AsyncSession, openai: _StubOpenAI) -> list[A
     lens = await _seed_targeting_and_lens(db_session, user.id)
     queries = build_seed_queries(["ML Engineer"], [lens], cap=5)
     openai._sources_by_query = {
-        queries[0]: [
+        queries[0].text: [
             Source(url="https://boards.greenhouse.io/acme/jobs/1", title="Acme role"),
             Source(url="https://jobs.lever.co/beta-corp/2", title="Beta role"),
         ]
@@ -456,3 +446,33 @@ async def test_description_is_blank_when_the_model_returns_the_wrong_count(
     approvals = await _discover_two(db_session, _StubOpenAI({}, whys=["only one sentence"]))
 
     assert all(a.why == "" for a in approvals)
+
+
+# --- effective_max_searches (per-user cap) ----------------------------------------
+
+
+@requires_db
+async def test_effective_max_searches_uses_user_override_clamped(db_session: AsyncSession) -> None:
+    from specula_api.db.models import UserSettings
+    from specula_api.services.discovery_settings import effective_max_searches
+
+    user = await make_user(db_session)
+    await set_tenant(db_session, user.id)
+    s = Settings()  # global default discovery_max_searches == 10
+
+    # no UserSettings row → global default
+    assert await effective_max_searches(db_session, user.id, s) == 10
+
+    db_session.add(UserSettings(user_id=user.id, discovery_max_searches=3))
+    await db_session.flush()
+    assert await effective_max_searches(db_session, user.id, s) == 3
+
+    row = await db_session.get(UserSettings, user.id)
+    assert row is not None
+    row.discovery_max_searches = 99  # clamps to 20
+    await db_session.flush()
+    assert await effective_max_searches(db_session, user.id, s) == 20
+
+    row.discovery_max_searches = 0  # clamps to 1
+    await db_session.flush()
+    assert await effective_max_searches(db_session, user.id, s) == 1

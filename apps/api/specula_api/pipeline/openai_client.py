@@ -176,7 +176,7 @@ class OpenAIResponsesClient:
         if allowed_domains:
             tool["filters"] = {"allowed_domains": list(allowed_domains)}
         response = await self._client.responses.create(
-            model=self._settings.openai_search_model,
+            model=self._settings.openai_discovery_model,
             input=query,
             tools=[tool],
             include=["web_search_call.action.sources"],

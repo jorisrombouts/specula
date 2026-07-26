@@ -3,10 +3,15 @@
 import { useState } from "react";
 import { signOut } from "next-auth/react";
 import { deleteAccount } from "@/lib/api/account";
+import { DiscoverySettings } from "@/components/settings/discovery-settings";
 
 type DeleteState = "idle" | "confirming" | "deleting" | "error";
 
-export function SettingsView() {
+export function SettingsView({
+  initialMaxSearches,
+}: {
+  initialMaxSearches: number;
+}) {
   const [state, setState] = useState<DeleteState>("idle");
 
   async function confirmDelete() {
@@ -57,6 +62,8 @@ export function SettingsView() {
             Export my data
           </a>
         </div>
+
+        <DiscoverySettings initial={initialMaxSearches} />
 
         <div className="rounded-[11px] border border-warn bg-warn-bg p-[20px]">
           <h2 className="m-0 font-display text-[18px] font-semibold tracking-[-0.01em] text-warn">
