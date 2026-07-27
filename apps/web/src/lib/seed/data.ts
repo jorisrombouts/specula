@@ -159,6 +159,7 @@ export const jobs: Job[] = [
   {
     id: "j1",
     company: "Mistral AI",
+    sourceUrl: "https://jobs.mistral.ai/",
     logo: "MA",
     title: "Applied Scientist — LLM Agents",
     city: "Paris",
@@ -200,6 +201,7 @@ export const jobs: Job[] = [
   {
     id: "j2",
     company: "Helsing",
+    sourceUrl: "https://helsing.ai/careers",
     logo: "HS",
     title: "Senior Machine Learning Engineer",
     city: "Munich",
@@ -240,6 +242,7 @@ export const jobs: Job[] = [
   {
     id: "j3",
     company: "DeepL",
+    sourceUrl: "https://www.deepl.com/careers",
     logo: "DL",
     title: "ML Engineer — Inference",
     city: "Remote · EU",
@@ -280,6 +283,7 @@ export const jobs: Job[] = [
   {
     id: "j4",
     company: "ElevenLabs",
+    sourceUrl: "https://elevenlabs.io/careers",
     logo: "EL",
     title: "Applied Research Engineer — Audio LLMs",
     city: "Remote · EU",
@@ -320,6 +324,7 @@ export const jobs: Job[] = [
   {
     id: "j5",
     company: "Sereact",
+    sourceUrl: "https://sereact.ai/careers",
     logo: "SR",
     title: "Research Engineer — Robotics Foundation Models",
     city: "Remote · EU",
@@ -361,6 +366,7 @@ export const jobs: Job[] = [
   {
     id: "j6",
     company: "Pigment",
+    sourceUrl: "https://www.pigment.com/careers",
     logo: "PG",
     title: "Senior Data Scientist — Forecasting",
     city: "Paris",
@@ -401,6 +407,7 @@ export const jobs: Job[] = [
   {
     id: "j7",
     company: "Qonto",
+    sourceUrl: "https://careers.qonto.com/",
     logo: "QO",
     title: "Machine Learning Engineer — Fraud",
     city: "Barcelona",
@@ -441,6 +448,7 @@ export const jobs: Job[] = [
   {
     id: "j8",
     company: "Synthesia",
+    sourceUrl: "https://www.synthesia.io/careers",
     logo: "SY",
     title: "AI Engineer — Generative Video",
     city: "Remote · EU",
@@ -481,6 +489,7 @@ export const jobs: Job[] = [
   {
     id: "j9",
     company: "Aleph Alpha",
+    sourceUrl: "https://aleph-alpha.com/careers",
     logo: "AA",
     title: "ML Engineer — Retrieval & RAG",
     city: "Heidelberg",
@@ -521,6 +530,7 @@ export const jobs: Job[] = [
   {
     id: "j10",
     company: "Wayve",
+    sourceUrl: "https://wayve.ai/careers",
     logo: "WV",
     title: "Applied Scientist — Foundation Models",
     city: "Remote",
@@ -562,6 +572,7 @@ export const jobs: Job[] = [
   {
     id: "j11",
     company: "Parloa",
+    sourceUrl: "https://www.parloa.com/careers",
     logo: "PA",
     title: "ML Engineer — Voice Agents",
     city: "Berlin",
@@ -602,6 +613,7 @@ export const jobs: Job[] = [
   {
     id: "j12",
     company: "Ada Health",
+    sourceUrl: "https://www.ada.com/careers",
     logo: "AD",
     title: "AI Engineer — Clinical LLMs",
     city: "Berlin",
@@ -642,6 +654,7 @@ export const jobs: Job[] = [
   {
     id: "j13",
     company: "Factorial",
+    sourceUrl: "https://factorialhr.com/careers",
     logo: "FC",
     title: "Machine Learning Engineer — Recommendations",
     city: "Barcelona",

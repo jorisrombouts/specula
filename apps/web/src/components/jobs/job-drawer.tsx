@@ -282,10 +282,22 @@ export function JobDrawer({
           </Section>
 
           <div className="flex gap-[10px]">
-            <Button variant="pri" className="flex-1 justify-center">
+            <Button
+              as="a"
+              href={job.sourceUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              variant="pri"
+              className="flex-1 justify-center"
+            >
               ↗ Open posting
             </Button>
-            <Button>★ Save</Button>
+            <Button
+              onClick={() => handleStatus("Saved")}
+              aria-pressed={status === "Saved"}
+            >
+              {status === "Saved" ? "★ Saved" : "★ Save"}
+            </Button>
           </div>
         </div>
       </aside>

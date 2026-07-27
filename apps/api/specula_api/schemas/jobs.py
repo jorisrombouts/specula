@@ -50,6 +50,7 @@ class JobOut(CamelModel):
     responsibilities: list[str]
     summary: str
     rationale: str
+    source_url: str
 
 
 class LensSummaryOut(CamelModel):

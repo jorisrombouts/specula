@@ -139,6 +139,36 @@ describe("JobDrawer", () => {
     expect(onPatchState).toHaveBeenCalledWith(job.id, { status: "Applied" });
   });
 
+  it("opens the posting in a new tab via the job's sourceUrl", () => {
+    render(
+      <JobDrawer
+        job={job}
+        candidate={candidate}
+        onClose={() => {}}
+        mstyle="bars"
+      />,
+    );
+    const link = screen.getByRole("link", { name: /Open posting/ });
+    expect(link).toHaveAttribute("href", job.sourceUrl);
+    expect(link).toHaveAttribute("target", "_blank");
+    expect(link).toHaveAttribute("rel", "noopener noreferrer");
+  });
+
+  it("wires the Save button to set status Saved", () => {
+    const onPatchState = vi.fn();
+    render(
+      <JobDrawer
+        job={job}
+        candidate={candidate}
+        onClose={() => {}}
+        mstyle="bars"
+        onPatchState={onPatchState}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "★ Save" }));
+    expect(onPatchState).toHaveBeenCalledWith(job.id, { status: "Saved" });
+  });
+
   it("wires the note textarea to onPatchState on blur", () => {
     const onPatchState = vi.fn();
     render(

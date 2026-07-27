@@ -14,6 +14,7 @@ export interface Job {
   stack: string[]; niceToHave: string[]; visa: string; langs: string[];
   contract: string; geo: string; confidence: number; dismissReason?: string;
   responsibilities: string[]; summary: string; rationale: string;
+  sourceUrl: string;
 }
 
 export interface Lens {
