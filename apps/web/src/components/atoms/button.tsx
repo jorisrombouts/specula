@@ -6,16 +6,33 @@ const cls: Record<Variant, string> = {
   ghost:
     "border-transparent bg-transparent text-ink-2 hover:bg-panel hover:text-ink",
 };
+const base =
+  "inline-flex items-center gap-[7px] rounded-[7px] border px-[14px] py-2 text-[12.5px] font-medium transition-colors";
+
+type ButtonProps = {
+  variant?: Variant;
+  as?: "button";
+} & React.ButtonHTMLAttributes<HTMLButtonElement>;
+type AnchorProps = {
+  variant?: Variant;
+  as: "a";
+} & React.AnchorHTMLAttributes<HTMLAnchorElement>;
+
 export function Button({
   variant = "default",
   className = "",
+  as = "button",
   ...props
-}: { variant?: Variant } & React.ButtonHTMLAttributes<HTMLButtonElement>) {
+}: ButtonProps | AnchorProps) {
+  const cn = `${base} ${cls[variant]} ${className}`;
+  if (as === "a") {
+    return <a className={cn} {...(props as AnchorProps)} />;
+  }
   return (
     <button
       type="button"
-      className={`inline-flex items-center gap-[7px] rounded-[7px] border px-[14px] py-2 text-[12.5px] font-medium transition-colors ${cls[variant]} ${className}`}
-      {...props}
+      className={cn}
+      {...(props as React.ButtonHTMLAttributes<HTMLButtonElement>)}
     />
   );
 }

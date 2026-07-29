@@ -155,6 +155,7 @@ def _to_job(
         responsibilities=list(posting.responsibilities),
         summary=posting.summary or "",
         rationale=score.rationale,
+        source_url=posting.source_url,
     )
 
 
