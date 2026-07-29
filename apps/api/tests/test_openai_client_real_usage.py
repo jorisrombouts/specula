@@ -124,7 +124,7 @@ async def test_metering_records_real_usage_not_the_char_estimate(
     monkeypatch.setattr(client._client.chat.completions, "parse", fake_parse)
 
     settings = Settings(openai_api_key="test-key")
-    sink = CostSink(run_budget_usd=1000.0, daily_budget_usd=1000.0)
+    sink = CostSink()
     metered = MeteringOpenAIClient(client, sink, settings)
 
     page_text = "short page"  # ~4-chars/token estimate would be tiny, nowhere near 1234/567
@@ -193,7 +193,7 @@ async def test_missing_dot_usage_falls_back_to_estimate(monkeypatch: pytest.Monk
     monkeypatch.setattr(client._client.chat.completions, "parse", fake_parse)
 
     settings = Settings(openai_api_key="test-key")
-    sink = CostSink(run_budget_usd=1000.0, daily_budget_usd=1000.0)
+    sink = CostSink()
     metered = MeteringOpenAIClient(client, sink, settings)
 
     page_text = "short page"
@@ -207,7 +207,7 @@ async def test_missing_dot_usage_falls_back_to_estimate(monkeypatch: pytest.Monk
 
 async def test_recorded_client_has_no_usage_channel_so_metering_estimates() -> None:
     settings = Settings()
-    sink = CostSink(run_budget_usd=1000.0, daily_budget_usd=1000.0)
+    sink = CostSink()
     recorded = RecordedOpenAIClient(FIXTURES_DIR)
     metered = MeteringOpenAIClient(recorded, sink, settings)
 

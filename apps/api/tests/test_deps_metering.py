@@ -16,8 +16,6 @@ def test_build_deps_recorded_wraps_openai_in_metering_with_a_sink() -> None:
     deps = build_deps(settings)
     assert isinstance(deps.openai, MeteringOpenAIClient)
     assert isinstance(deps.cost_sink, CostSink)
-    assert deps.cost_sink.run_budget_usd == settings.openai_run_budget_usd
-    assert deps.cost_sink.daily_budget_usd == settings.openai_daily_budget_usd
 
 
 def test_hand_built_deps_default_to_no_cost_sink() -> None:

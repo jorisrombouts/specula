@@ -1,14 +1,11 @@
-"""Unit tests for the OpenAI cost-metering seam (OBS lane): MeteringOpenAIClient +
-CostSink + BudgetExceeded. No DB, no network — a hand-built inner stub supplies outputs."""
+"""Unit tests for the OpenAI cost-metering seam (OBS lane): MeteringOpenAIClient + CostSink.
+No DB, no network — a hand-built inner stub supplies outputs."""
 
 from collections.abc import Sequence
 from decimal import Decimal
 
-import pytest
-
 from specula_api.config import OPENAI_PRICING, Settings
 from specula_api.pipeline.openai_client import (
-    BudgetExceeded,
     CostRecord,
     CostSink,
     EnrichResult,
@@ -73,7 +70,7 @@ def _pricing_cost(rec: CostRecord) -> Decimal:
 
 def _metered() -> tuple[MeteringOpenAIClient, _StubOpenAI, CostSink]:
     settings = Settings()
-    sink = CostSink(run_budget_usd=1000.0, daily_budget_usd=1000.0)
+    sink = CostSink()
     inner = _StubOpenAI()
     return MeteringOpenAIClient(inner, sink, settings), inner, sink
 
@@ -132,36 +129,25 @@ async def test_empty_embed_records_nothing() -> None:
     assert sink.records == []
 
 
-def test_costsink_raises_when_run_budget_exceeded() -> None:
-    sink = CostSink(run_budget_usd=0.0001, daily_budget_usd=1000.0)
-    with pytest.raises(BudgetExceeded) as excinfo:
-        sink.add(CostRecord("extract", "gpt-4o", 0, 0, 0, Decimal("0.0002")))
-    assert excinfo.value.scope == "run"
-
-
-def test_costsink_raises_when_daily_budget_exceeded() -> None:
-    sink = CostSink(run_budget_usd=1000.0, daily_budget_usd=0.0001)
-    sink.daily_baseline = Decimal("0.0")
-    with pytest.raises(BudgetExceeded) as excinfo:
-        sink.add(CostRecord("embed", "text-embedding-3-small", 0, 0, 100, Decimal("0.0002")))
-    assert excinfo.value.scope == "daily"
-
-
-def test_costsink_daily_baseline_counts_toward_ceiling() -> None:
-    sink = CostSink(run_budget_usd=1000.0, daily_budget_usd=1.0)
-    sink.daily_baseline = Decimal("0.99")
-    with pytest.raises(BudgetExceeded):
-        sink.add(CostRecord("score", "gpt-4o-mini", 0, 0, 0, Decimal("0.02")))
-
-
-def test_budget_exceeded_is_not_a_plain_exception() -> None:
-    # discovery.py wraps openai calls in `except Exception`; the abort signal must survive it.
-    assert not issubclass(BudgetExceeded, Exception)
-    assert issubclass(BudgetExceeded, BaseException)
+def test_usage_sink_never_caps_regardless_of_volume() -> None:
+    """The budget guard was removed (2026-07-29). A sink accumulates without limit."""
+    sink = CostSink()
+    for _ in range(50):
+        sink.add(
+            CostRecord(
+                stage="rationale",
+                model="gpt-4o",
+                prompt_tokens=1_000_000,
+                completion_tokens=1_000_000,
+                embed_tokens=0,
+                cost_usd=Decimal("12.50"),
+            )
+        )
+    assert len(sink.records) == 50
 
 
 def test_costsink_total_sums_records() -> None:
-    sink = CostSink(run_budget_usd=1000.0, daily_budget_usd=1000.0)
+    sink = CostSink()
     sink.add(CostRecord("embed", "text-embedding-3-small", 0, 0, 10, Decimal("0.01")))
     sink.add(CostRecord("extract", "gpt-4o-mini", 100, 20, 0, Decimal("0.02")))
     assert sink.total == Decimal("0.03")

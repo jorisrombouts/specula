@@ -79,8 +79,6 @@ class Settings(BaseSettings):
     pipeline_fixtures_dir: str | None = None
 
     # --- M5 hardening ---
-    openai_run_budget_usd: float = 5.0  # abort/mark a run/ingest if its LLM spend exceeds this
-    openai_daily_budget_usd: float = 20.0  # per-user daily ceiling across runs
     run_rate_limit_per_hour: int = 10  # on-demand trigger cap (NET gate)
     run_cooldown_s: int = 60  # min seconds between a user's triggers
     # Approve->ingest has its OWN budget (separate bucket, no cooldown): you work through the

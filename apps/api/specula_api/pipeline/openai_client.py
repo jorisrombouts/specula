@@ -557,30 +557,14 @@ class CostRecord:
     cost_usd: Decimal
 
 
-class BudgetExceeded(BaseException):
-    """A run/ingest's accumulated OpenAI spend crossed a configured ceiling. Derives from
-    BaseException, NOT Exception, on purpose: the pipeline's broad `except Exception` guards
-    (discovery.py) must not swallow this abort. services/run.py catches it explicitly, persists
-    the costs accrued so far, and marks the run errored."""
-
-    def __init__(self, scope: str, spent: Decimal, budget: float) -> None:
-        super().__init__(f"OpenAI {scope} budget exceeded: ${spent} > ${budget}")
-        self.scope = scope
-        self.spent = spent
-        self.budget = budget
-
-
 @dataclass
 class CostSink:
-    """Accumulates a run/ingest's `CostRecord`s and trips the budget guard.
+    """Accumulates a run/ingest's `CostRecord`s.
 
-    In-memory only — services/run.py reads `records` afterward to write `llm_costs` rows and the
-    `runs.cost_usd` rollup. `daily_baseline` is the user's spend earlier today (seeded from the
-    ledger before the pipeline starts) so the per-day ceiling spans runs, not just this one."""
+    In-memory only — services/run.py reads `records` afterward to write `llm_costs` rows. There
+    is no spend ceiling: the USD budget guard was removed on 2026-07-29 (tokens are metered,
+    cost is not). Nothing here aborts a run."""
 
-    run_budget_usd: float
-    daily_budget_usd: float
-    daily_baseline: Decimal = Decimal("0")
     records: list[CostRecord] = field(default_factory=list)
 
     @property
@@ -588,14 +572,7 @@ class CostSink:
         return sum((rec.cost_usd for rec in self.records), Decimal("0"))
 
     def add(self, record: CostRecord) -> None:
-        """Append a record, then enforce the per-run and per-day ceilings (raises after the
-        record is stored, so the call that tipped the balance is still accounted for)."""
         self.records.append(record)
-        total = self.total
-        if total > Decimal(str(self.run_budget_usd)):
-            raise BudgetExceeded("run", total, self.run_budget_usd)
-        if self.daily_baseline + total > Decimal(str(self.daily_budget_usd)):
-            raise BudgetExceeded("daily", self.daily_baseline + total, self.daily_budget_usd)
 
 
 class MeteringOpenAIClient:

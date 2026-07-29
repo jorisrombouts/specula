@@ -70,12 +70,8 @@ def build_record_deps(settings: Settings, fixtures_dir: Path) -> PipelineDeps:
 
 
 def _with_metering(deps: PipelineDeps, settings: Settings) -> PipelineDeps:
-    """Wrap deps.openai in cost metering feeding a fresh per-run CostSink (OBS). The budget
-    ceilings come from Settings; the daily baseline is seeded later, on the request's session."""
-    sink = CostSink(
-        run_budget_usd=settings.openai_run_budget_usd,
-        daily_budget_usd=settings.openai_daily_budget_usd,
-    )
+    """Wrap deps.openai in token metering feeding a fresh per-run CostSink (OBS)."""
+    sink = CostSink()
     return replace(deps, openai=MeteringOpenAIClient(deps.openai, sink, settings), cost_sink=sink)
 
 

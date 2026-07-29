@@ -10,8 +10,6 @@ def test_discovery_defaults() -> None:
 
 
 def test_m5_settings_present() -> None:
-    assert settings.openai_run_budget_usd > 0
-    assert settings.openai_daily_budget_usd >= settings.openai_run_budget_usd
     assert settings.run_rate_limit_per_hour > 0
     assert settings.run_cooldown_s >= 0
     assert settings.log_level == "INFO"
