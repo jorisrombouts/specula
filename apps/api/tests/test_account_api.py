@@ -1,5 +1,4 @@
 import uuid
-from decimal import Decimal
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -103,7 +102,6 @@ async def _seed_user_data(user_id: uuid.UUID, *, domain: str) -> dict[str, uuid.
                     model="gpt-4o-mini",
                     prompt_tokens=10,
                     completion_tokens=5,
-                    cost_usd=Decimal("0.001500"),
                 ),
                 Approval(user_id=user_id, name="Candidate Co"),
                 Targeting(user_id=user_id, role_titles=["ML Eng"]),
@@ -160,7 +158,7 @@ async def test_export_contains_callers_rows_in_camelcase(migrated_db: None) -> N
         assert len(body["postings"]) == 1
         assert len(body["scores"]) == 1
 
-        # llmCosts must serialise to the frozen LlmCost interface (camelCase, cost as number).
+        # llmCosts must serialise to the frozen LlmCost interface (camelCase, token counts).
         cost = body["llmCosts"][0]
         assert set(cost) == {
             "id",
@@ -171,12 +169,10 @@ async def test_export_contains_callers_rows_in_camelcase(migrated_db: None) -> N
             "promptTokens",
             "completionTokens",
             "embedTokens",
-            "costUsd",
             "createdAt",
         }
         assert cost["stage"] == "extract"
         assert cost["promptTokens"] == 10
-        assert cost["costUsd"] == 0.0015
     finally:
         await _cleanup_users(user.id)
 

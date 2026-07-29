@@ -1,8 +1,7 @@
 import uuid
 from datetime import datetime
-from decimal import Decimal
 
-from sqlalchemy import DateTime, Integer, Numeric, Text, func
+from sqlalchemy import DateTime, Integer, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from specula_api.db.base import Base
@@ -10,10 +9,12 @@ from specula_api.db.columns import user_fk, uuid_pk
 
 
 class LlmCost(Base):
-    """Per-call OpenAI spend ledger. Written by the pipeline (OBS), read by the
+    """Per-call OpenAI token usage ledger. Written by the pipeline (OBS), read by the
     dashboard (DASH). run_id/company_id are informational (no FK): company ingest —
-    the dominant spend — creates no Run, so cost cannot hang off `runs`. Tenancy is
-    the user_id FK (CASCADE) alone; account deletion drops these rows."""
+    the dominant source of usage — creates no Run, so usage cannot hang off `runs`. Tenancy
+    is the user_id FK (CASCADE) alone; account deletion drops these rows. The table (and
+    model) name `llm_costs` is retained for historical reasons — renaming it would need a
+    migration — even though it no longer stores cost, only token counts."""
 
     __tablename__ = "llm_costs"
 
@@ -26,5 +27,4 @@ class LlmCost(Base):
     prompt_tokens: Mapped[int] = mapped_column(Integer, server_default="0")
     completion_tokens: Mapped[int] = mapped_column(Integer, server_default="0")
     embed_tokens: Mapped[int] = mapped_column(Integer, server_default="0")
-    cost_usd: Mapped[Decimal] = mapped_column(Numeric(12, 6), server_default="0")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

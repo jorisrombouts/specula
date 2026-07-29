@@ -22,9 +22,9 @@ instrument UI. Built in phases (M0–M6) from a Claude Design prototype.
 - Default to YAGNI/KISS: no service, file, folder, or abstraction until the milestone that needs it.
 - **Done (M0–M5):** the full pipeline discovery→approval→crawl→extract→score runs on a **manual
   trigger, inline** — scheduler/worker/hosting deferred. M4 is live-proven against real ATS boards
-  and real OpenAI calls; M5 hardened it (observability + OpenAI cost ledger + budget guard, rate
-  limits, GDPR export/delete + per-company opt-out, run & cost dashboard, k6 load + E2E). See
-  `docs/M5-STATUS.md` (+ `docs/M4-STATUS.md`).
+  and real OpenAI calls; M5 hardened it (observability + OpenAI token usage ledger (no spend
+  cap), rate limits, GDPR export/delete + per-company opt-out, run & token dashboard, k6 load
+  + E2E). See `docs/M5-STATUS.md` (+ `docs/M4-STATUS.md`).
 - **Current focus (M6 — Polish & launch):** keyboard-nav/a11y, onboarding, empty/loading states,
   perf budget, security review — plus the remaining M5 follow-ups (cost accounting, GDPR export
   breadth; the BFF error-propagation → rate-limit UI pair is shipped). See `docs/M5-STATUS.md`.

@@ -8,12 +8,12 @@ from pathlib import Path
 from specula_api.config import Settings
 from specula_api.pipeline.http import Fetcher, PoliteFetcher, RecordedFetcher, RecordingFetcher
 from specula_api.pipeline.openai_client import (
-    CostSink,
     MeteringOpenAIClient,
     OpenAIClient,
     OpenAIResponsesClient,
     RecordedOpenAIClient,
     RecordingOpenAIClient,
+    UsageSink,
 )
 
 # apps/api/tests/fixtures/pipeline — used for "recorded" mode when settings.pipeline_fixtures_dir
@@ -28,8 +28,8 @@ class PipelineDeps:
     settings: Settings
     now: Callable[[], datetime]  # deterministic clock override for tests
     # Populated by build_deps; None for hand-built deps in unit/pipeline tests. When set,
-    # services/run.py drains it into `llm_costs` rows + the `runs.cost_usd` rollup (OBS).
-    cost_sink: CostSink | None = None
+    # services/run.py drains it into `llm_costs` rows (OBS).
+    usage_sink: UsageSink | None = None
 
     async def aclose(self) -> None:
         await self.openai.aclose()
@@ -70,13 +70,9 @@ def build_record_deps(settings: Settings, fixtures_dir: Path) -> PipelineDeps:
 
 
 def _with_metering(deps: PipelineDeps, settings: Settings) -> PipelineDeps:
-    """Wrap deps.openai in cost metering feeding a fresh per-run CostSink (OBS). The budget
-    ceilings come from Settings; the daily baseline is seeded later, on the request's session."""
-    sink = CostSink(
-        run_budget_usd=settings.openai_run_budget_usd,
-        daily_budget_usd=settings.openai_daily_budget_usd,
-    )
-    return replace(deps, openai=MeteringOpenAIClient(deps.openai, sink, settings), cost_sink=sink)
+    """Wrap deps.openai in token metering feeding a fresh per-run UsageSink (OBS)."""
+    sink = UsageSink()
+    return replace(deps, openai=MeteringOpenAIClient(deps.openai, sink, settings), usage_sink=sink)
 
 
 def build_deps(settings: Settings) -> PipelineDeps:

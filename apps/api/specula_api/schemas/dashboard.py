@@ -8,20 +8,20 @@ class CamelModel(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
 
-class CostByStage(CamelModel):
+class TokensByStage(CamelModel):
     stage: str
-    cost_usd: float
+    total_tokens: int
 
 
-class CostPoint(CamelModel):
+class TokenPoint(CamelModel):
     date: str  # YYYY-MM-DD (frozen contract types this as a string)
-    cost_usd: float
+    total_tokens: int
     runs: int
 
 
 class DashboardSummary(CamelModel):
-    total_cost_usd: float
+    total_tokens: int
     run_count: int
-    cost_by_stage: list[CostByStage]
-    cost_by_day: list[CostPoint]
+    tokens_by_stage: list[TokensByStage]
+    tokens_by_day: list[TokenPoint]
     recent_runs: list[RunOut]

@@ -26,10 +26,7 @@ async def test_llm_costs_scoped_by_tenant(migrated_db: None) -> None:
             )
         await s.execute(text("SELECT set_config('app.user_id', :u, false)"), {"u": str(a)})
         await s.execute(
-            text(
-                "INSERT INTO llm_costs (user_id, stage, model, cost_usd) "
-                "VALUES (:u,'score','gpt-4o-mini',0.01)"
-            ),
+            text("INSERT INTO llm_costs (user_id, stage, model) VALUES (:u,'score','gpt-4o-mini')"),
             {"u": str(a)},
         )
         await s.commit()

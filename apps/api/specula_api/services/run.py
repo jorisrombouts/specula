@@ -1,6 +1,5 @@
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from decimal import Decimal
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -17,44 +16,32 @@ from specula_api.pipeline.embeddings import embed_posting
 from specula_api.pipeline.enrich import enrich_company
 from specula_api.pipeline.extract import extract_posting
 from specula_api.pipeline.fetch import fetch_postings
-from specula_api.pipeline.openai_client import BudgetExceeded, EnrichResult
+from specula_api.pipeline.openai_client import EnrichResult
 from specula_api.pipeline.score import ensure_candidate_vectors, score_posting
 from specula_api.pipeline.util import favicon_url
 
 _log = get_logger("pipeline.run")
 
 
-async def _seed_daily_baseline(session: AsyncSession, user_id: UUID, deps: PipelineDeps) -> None:
-    """Load the user's OpenAI spend earlier today into the sink, so the per-day ceiling spans
-    every run today, not just this one. No-op when metering is off (hand-built deps)."""
-    sink = deps.cost_sink
-    if sink is None:
-        return
-    start_of_day = deps.now().replace(hour=0, minute=0, second=0, microsecond=0)
-    total = await session.scalar(
-        select(func.coalesce(func.sum(LlmCost.cost_usd), 0)).where(
-            LlmCost.user_id == user_id, LlmCost.created_at >= start_of_day
-        )
-    )
-    sink.daily_baseline = Decimal(total or 0)
-
-
-async def _persist_costs(
+async def _persist_usage(
     session: AsyncSession,
     user_id: UUID,
     deps: PipelineDeps,
     *,
     run_id: UUID | None,
     company_id: UUID | None,
-) -> Decimal:
-    """Drain the cost sink into `llm_costs` rows (one per metered call) and return their total.
-    Company ingest creates no Run, so its rows carry `run_id=None, company_id=<id>` (OBS→DASH
-    contract). Draining makes this safe to call once per run/ingest without double-counting."""
-    sink = deps.cost_sink
+) -> None:
+    """Drain the usage sink into `llm_costs` rows (one per metered call). Company ingest
+    creates no Run, so its rows carry `run_id=None, company_id=<id>` (OBS→DASH contract).
+    Draining makes this safe to call once per run/ingest without double-counting. Attributes
+    the ENTIRE sink to the single `(run_id, company_id)` pair it's called with — correct today
+    because nothing meters between per-company ingests in `refresh_all_jobs`, but a top-level
+    metered call added to that loop (mirroring `rescore_all`) would silently bill its tokens
+    to the first company ingested."""
+    sink = deps.usage_sink
     if sink is None:
-        return Decimal("0")
+        return
     created_at = deps.now()
-    total = Decimal("0")
     for record in sink.records:
         session.add(
             LlmCost(
@@ -66,14 +53,11 @@ async def _persist_costs(
                 prompt_tokens=record.prompt_tokens,
                 completion_tokens=record.completion_tokens,
                 embed_tokens=record.embed_tokens,
-                cost_usd=record.cost_usd,
                 created_at=created_at,
             )
         )
-        total += record.cost_usd
     sink.records.clear()
     await session.flush()
-    return total
 
 
 async def create_run(session: AsyncSession, user_id: UUID, kind: str = "on_demand") -> Run:
@@ -133,7 +117,6 @@ async def run_discovery(
     run.status = "running"
     run.started_at = datetime.now(UTC)
     await session.flush()
-    await _seed_daily_baseline(session, user_id, deps)
 
     with log_context(user_id=user_id, run_id=run_id):
         _log.info("run.discovery.start", extra={"stage": "discovery"})
@@ -146,19 +129,9 @@ async def run_discovery(
                 "low_conf_excluded": 0,
                 "errors": result.errors,
             }
-            run.cost_usd = await _persist_costs(
-                session, user_id, deps, run_id=run_id, company_id=None
-            )
+            await _persist_usage(session, user_id, deps, run_id=run_id, company_id=None)
             await finalize_run(session, run, stats, status="done")
             _log.info("run.discovery.done", extra={"stage": "discovery"})
-        except BudgetExceeded as exc:
-            # Persist what we already spent, mark the run errored, and DO NOT re-raise: letting
-            # the abort escape tenant_session would roll the ledger rows back.
-            run.cost_usd = await _persist_costs(
-                session, user_id, deps, run_id=run_id, company_id=None
-            )
-            await finalize_run(session, run, _ERROR_STATS, status="error")
-            _log.warning("run.budget_exceeded", extra={"stage": "discovery", "scope": exc.scope})
         except Exception:
             await finalize_run(session, run, _ERROR_STATS, status="error")
             raise
@@ -181,7 +154,7 @@ async def run_rescore(
     session: AsyncSession, user_id: UUID, run_id: UUID, deps: PipelineDeps
 ) -> None:
     """Re-score all existing postings against the current profile, wrapped in a Run for the same
-    budget guard + cost ledger + observability as discovery (mirrors `run_discovery`)."""
+    cost ledger + observability as discovery (mirrors `run_discovery`)."""
     run = await get_run(session, user_id, run_id)
     if run is None:
         return
@@ -189,7 +162,6 @@ async def run_rescore(
     run.status = "running"
     run.started_at = datetime.now(UTC)
     await session.flush()
-    await _seed_daily_baseline(session, user_id, deps)
 
     with log_context(user_id=user_id, run_id=run_id):
         _log.info("run.rescore.start", extra={"stage": "score"})
@@ -203,17 +175,9 @@ async def run_rescore(
                 "errors": 0,
                 "scored": scored,
             }
-            run.cost_usd = await _persist_costs(
-                session, user_id, deps, run_id=run_id, company_id=None
-            )
+            await _persist_usage(session, user_id, deps, run_id=run_id, company_id=None)
             await finalize_run(session, run, stats, status="done")
             _log.info("run.rescore.done", extra={"stage": "score", "scored": scored})
-        except BudgetExceeded as exc:
-            run.cost_usd = await _persist_costs(
-                session, user_id, deps, run_id=run_id, company_id=None
-            )
-            await finalize_run(session, run, {**_ERROR_STATS, "scored": 0}, status="error")
-            _log.warning("run.budget_exceeded", extra={"stage": "score", "scope": exc.scope})
         except Exception:
             await finalize_run(session, run, {**_ERROR_STATS, "scored": 0}, status="error")
             raise
@@ -256,26 +220,21 @@ async def ingest_company(
     session: AsyncSession, user_id: UUID, company_id: UUID, deps: PipelineDeps
 ) -> None:
     """Enrich → fetch → extract → embed → dedup → score one company. Records its (dominant)
-    OpenAI spend as `llm_costs` rows keyed to the company (no Run exists for an ingest), and
-    aborts cleanly on a budget breach — costs already accrued are still persisted (finally)."""
+    OpenAI usage as `llm_costs` rows keyed to the company (no Run exists for an ingest); the
+    `finally` drains those rows into the session on every path, but an exception escaping the
+    pipeline still propagates and `tenant_session` rolls the whole ingest back — ledger rows
+    included — so a crashed ingest records nothing."""
     company = await session.get(Company, company_id)
     if company is None or company.user_id != user_id or company.opt_out:
         return
 
-    await _seed_daily_baseline(session, user_id, deps)
     with log_context(user_id=user_id):
         _log.info("ingest.start", extra={"stage": "enrich", "company_id": str(company.id)})
         try:
             await _ingest_pipeline(session, user_id, company, deps)
             _log.info("ingest.done", extra={"company_id": str(company.id)})
-        except BudgetExceeded as exc:
-            # Swallow the abort so the ledger + partial work commit (see run_discovery).
-            _log.warning(
-                "ingest.budget_exceeded",
-                extra={"scope": exc.scope, "company_id": str(company.id)},
-            )
         finally:
-            await _persist_costs(session, user_id, deps, run_id=None, company_id=company.id)
+            await _persist_usage(session, user_id, deps, run_id=None, company_id=company.id)
 
 
 async def _ingest_pipeline(
@@ -432,9 +391,9 @@ async def refresh_all_jobs(session: AsyncSession, user_id: UUID, deps: PipelineD
 async def run_refresh(
     session: AsyncSession, user_id: UUID, run_id: UUID, deps: PipelineDeps
 ) -> None:
-    """Re-crawl all tracked companies for new jobs, wrapped in a Run for the same budget guard +
+    """Re-crawl all tracked companies for new jobs, wrapped in a Run for the same cost ledger +
     observability as discovery (mirrors `run_rescore`). Per-company ingest keys its own cost
-    rows to the company, so this run's `cost_usd` rollup is 0 by design."""
+    rows to the company."""
     run = await get_run(session, user_id, run_id)
     if run is None:
         return
@@ -442,7 +401,6 @@ async def run_refresh(
     run.status = "running"
     run.started_at = datetime.now(UTC)
     await session.flush()
-    await _seed_daily_baseline(session, user_id, deps)
 
     with log_context(user_id=user_id, run_id=run_id):
         _log.info("run.refresh.start", extra={"stage": "fetch"})
@@ -456,17 +414,9 @@ async def run_refresh(
                 "errors": 0,
                 "scored": 0,
             }
-            run.cost_usd = await _persist_costs(
-                session, user_id, deps, run_id=run_id, company_id=None
-            )
+            await _persist_usage(session, user_id, deps, run_id=run_id, company_id=None)
             await finalize_run(session, run, stats, status="done")
             _log.info("run.refresh.done", extra={"stage": "fetch", "new": new})
-        except BudgetExceeded as exc:
-            run.cost_usd = await _persist_costs(
-                session, user_id, deps, run_id=run_id, company_id=None
-            )
-            await finalize_run(session, run, _ERROR_STATS, status="error")
-            _log.warning("run.budget_exceeded", extra={"stage": "fetch", "scope": exc.scope})
         except Exception:
             await finalize_run(session, run, _ERROR_STATS, status="error")
             raise

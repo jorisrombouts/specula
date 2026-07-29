@@ -6,16 +6,16 @@ import { DashboardView } from "@/components/dashboard/dashboard-view";
 afterEach(cleanup);
 
 const summary: DashboardSummary = {
-  totalCostUsd: 0.37,
+  totalTokens: 1234,
   runCount: 3,
-  costByStage: [
-    { stage: "score", costUsd: 0.2 },
-    { stage: "extract", costUsd: 0.15 },
-    { stage: "embed", costUsd: 0.02 },
+  tokensByStage: [
+    { stage: "score", totalTokens: 200 },
+    { stage: "extract", totalTokens: 150 },
+    { stage: "embed", totalTokens: 20 },
   ],
-  costByDay: [
-    { date: "2026-07-05", costUsd: 0.12, runs: 1 },
-    { date: "2026-07-06", costUsd: 0.25, runs: 2 },
+  tokensByDay: [
+    { date: "2026-07-05", totalTokens: 120, runs: 1 },
+    { date: "2026-07-06", totalTokens: 250, runs: 2 },
   ],
   recentRuns: [
     {
@@ -33,7 +33,7 @@ const summary: DashboardSummary = {
         scored: 0,
       },
       createdAt: "2026-07-06T12:00:00Z",
-      cost: { costUsd: 0.3, durationMs: 1234 },
+      tokens: { totalTokens: 300, durationMs: 1234 },
     },
     {
       id: "r-1",
@@ -50,20 +50,20 @@ const summary: DashboardSummary = {
         scored: 0,
       },
       createdAt: "2026-07-05T12:00:00Z",
-      cost: null,
+      tokens: null,
     },
   ],
 };
 
 describe("DashboardView", () => {
-  it("renders the headline total spend and run count", () => {
+  it("renders the headline total tokens and run count", () => {
     render(<DashboardView summary={summary} />);
-    expect(screen.getByText("$0.37")).toBeInTheDocument();
+    expect(screen.getByText("1,234")).toBeInTheDocument();
     // Run count appears in its own tile.
     expect(screen.getByText("3")).toBeInTheDocument();
   });
 
-  it("lists each spend stage", () => {
+  it("lists each token stage", () => {
     render(<DashboardView summary={summary} />);
     for (const stage of ["score", "extract", "embed"]) {
       expect(screen.getByText(stage)).toBeInTheDocument();
@@ -78,19 +78,20 @@ describe("DashboardView", () => {
     expect(screen.getByText("scheduled")).toBeInTheDocument();
   });
 
-  it("renders an empty state when there is no spend or runs", () => {
+  it("renders an empty state when there is no usage or runs", () => {
     render(
       <DashboardView
         summary={{
-          totalCostUsd: 0,
+          totalTokens: 0,
           runCount: 0,
-          costByStage: [],
-          costByDay: [],
+          tokensByStage: [],
+          tokensByDay: [],
           recentRuns: [],
         }}
       />,
     );
-    expect(screen.getByText("$0.00")).toBeInTheDocument();
+    // Both the token total and the run count tiles render "0".
+    expect(screen.getAllByText("0")).toHaveLength(2);
     expect(screen.getByText(/no runs yet/i)).toBeInTheDocument();
   });
 });

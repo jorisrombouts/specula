@@ -113,21 +113,21 @@ export interface Run {
   id: string; kind: "scheduled" | "on_demand" | "rescore" | "refresh";
   status: "queued" | "running" | "done" | "error";
   startedAt: string | null; finishedAt: string | null;
-  stats: RunStats; createdAt: string; cost?: RunCost | null;
+  stats: RunStats; createdAt: string; tokens?: RunTokens | null;
 }
 
 export interface LlmCost {
   id: string; runId: string | null; companyId: string | null;
   stage: string; model: string;
   promptTokens: number; completionTokens: number; embedTokens: number;
-  costUsd: number; createdAt: string;
+  createdAt: string;
 }
-export interface RunCost { costUsd: number; durationMs: number | null }
-export interface CostPoint { date: string; costUsd: number; runs: number }
-export interface CostByStage { stage: string; costUsd: number }
+export interface RunTokens { totalTokens: number; durationMs: number | null }
+export interface TokenPoint { date: string; totalTokens: number; runs: number }
+export interface TokensByStage { stage: string; totalTokens: number }
 export interface DashboardSummary {
-  totalCostUsd: number; runCount: number;
-  costByStage: CostByStage[]; costByDay: CostPoint[]; recentRuns: Run[];
+  totalTokens: number; runCount: number;
+  tokensByStage: TokensByStage[]; tokensByDay: TokenPoint[]; recentRuns: Run[];
 }
 // A data-export blob is a heterogeneous dump; DATA owns the row shapes on both ends,
 // so arrays are intentionally `unknown[]` here (a deliberate type, not a placeholder).

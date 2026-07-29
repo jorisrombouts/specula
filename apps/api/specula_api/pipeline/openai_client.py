@@ -7,7 +7,6 @@ import re
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import date
-from decimal import Decimal
 from pathlib import Path
 from typing import Protocol, TypeVar
 
@@ -16,7 +15,7 @@ from openai.types.responses import Response, ResponseFunctionWebSearch, WebSearc
 from openai.types.responses.response_function_web_search import ActionSearch
 from pydantic import BaseModel, Field, TypeAdapter
 
-from specula_api.config import OPENAI_PRICING, Settings
+from specula_api.config import Settings
 
 _EMBED_DIM = 1536
 
@@ -509,8 +508,8 @@ class RecordingOpenAIClient:
 
 
 # ---------------------------------------------------------------------------
-# Cost metering — wraps any OpenAIClient, sizes each call and reports its USD cost to a sink.
-# One CostRecord = one OpenAI call; services/run.py turns records into `llm_costs` rows (OBS→DASH).
+# Token metering — wraps any OpenAIClient, sizes each call and reports its token usage to a sink.
+# One UsageRecord = one OpenAI call; services/run.py turns records into `llm_costs` rows (OBS→DASH).
 # ---------------------------------------------------------------------------
 
 # The OpenAI seam returns PARSED domain objects, so a live response's real `.usage` is not part
@@ -518,8 +517,8 @@ class RecordingOpenAIClient:
 # `last_usage` attribute (see its docstring), which `MeteringOpenAIClient._real_usage` reads.
 # CI/recorded mode never calls the API, so there is no `.usage` to capture there at all; tokens
 # are then ESTIMATED from the call's text at OpenAI's published ~4-chars-per-token guide.
-# Deterministic (same text → same count), which is what lets a recorded run assert an exact cost
-# and lets DASH's display agree with what we stored.
+# Deterministic (same text → same count), which is what lets a recorded run assert an exact
+# token count and lets DASH's display agree with what we stored.
 _CHARS_PER_TOKEN = 4
 
 
@@ -531,79 +530,38 @@ def estimate_tokens(*texts: str) -> int:
     return max(1, -(-chars // _CHARS_PER_TOKEN))
 
 
-def compute_cost_usd(
-    model: str, *, prompt_tokens: int = 0, completion_tokens: int = 0, embed_tokens: int = 0
-) -> Decimal:
-    """USD cost of one call from `config.OPENAI_PRICING` (USD per 1M tokens), rounded to the
-    `llm_costs.cost_usd` Numeric(12, 6) scale. Unknown models bill as free (never crash a run)."""
-    price = OPENAI_PRICING.get(model, {"prompt": 0.0, "completion": 0.0, "embed": 0.0})
-    usd = (
-        prompt_tokens * price["prompt"]
-        + completion_tokens * price["completion"]
-        + embed_tokens * price["embed"]
-    ) / 1_000_000
-    return Decimal(str(usd)).quantize(Decimal("0.000001"))
-
-
 @dataclass(frozen=True)
-class CostRecord:
-    """One metered OpenAI call. `stage` ∈ {discovery, extract, embed, score, rationale}."""
+class UsageRecord:
+    """One metered OpenAI call. `stage` ∈ {discovery, extract, embed, score, rationale}.
+    Tokens only — Specula does not price calls (2026-07-29)."""
 
     stage: str
     model: str
     prompt_tokens: int
     completion_tokens: int
     embed_tokens: int
-    cost_usd: Decimal
-
-
-class BudgetExceeded(BaseException):
-    """A run/ingest's accumulated OpenAI spend crossed a configured ceiling. Derives from
-    BaseException, NOT Exception, on purpose: the pipeline's broad `except Exception` guards
-    (discovery.py) must not swallow this abort. services/run.py catches it explicitly, persists
-    the costs accrued so far, and marks the run errored."""
-
-    def __init__(self, scope: str, spent: Decimal, budget: float) -> None:
-        super().__init__(f"OpenAI {scope} budget exceeded: ${spent} > ${budget}")
-        self.scope = scope
-        self.spent = spent
-        self.budget = budget
 
 
 @dataclass
-class CostSink:
-    """Accumulates a run/ingest's `CostRecord`s and trips the budget guard.
+class UsageSink:
+    """Accumulates a run/ingest's `UsageRecord`s.
 
-    In-memory only — services/run.py reads `records` afterward to write `llm_costs` rows and the
-    `runs.cost_usd` rollup. `daily_baseline` is the user's spend earlier today (seeded from the
-    ledger before the pipeline starts) so the per-day ceiling spans runs, not just this one."""
+    In-memory only — services/run.py reads `records` afterward to write `llm_costs` rows.
+    There is no spend ceiling: the USD budget guard was removed on 2026-07-29."""
 
-    run_budget_usd: float
-    daily_budget_usd: float
-    daily_baseline: Decimal = Decimal("0")
-    records: list[CostRecord] = field(default_factory=list)
+    records: list[UsageRecord] = field(default_factory=list)
 
-    @property
-    def total(self) -> Decimal:
-        return sum((rec.cost_usd for rec in self.records), Decimal("0"))
-
-    def add(self, record: CostRecord) -> None:
-        """Append a record, then enforce the per-run and per-day ceilings (raises after the
-        record is stored, so the call that tipped the balance is still accounted for)."""
+    def add(self, record: UsageRecord) -> None:
         self.records.append(record)
-        total = self.total
-        if total > Decimal(str(self.run_budget_usd)):
-            raise BudgetExceeded("run", total, self.run_budget_usd)
-        if self.daily_baseline + total > Decimal(str(self.daily_budget_usd)):
-            raise BudgetExceeded("daily", self.daily_baseline + total, self.daily_budget_usd)
 
 
 class MeteringOpenAIClient:
     """Wraps an `OpenAIClient`, mirroring the `RecordingOpenAIClient` decorator shape: delegate
-    first, then size the call and report its cost to the sink. The stage is derived from the
-    method; the model is resolved from `settings` (the same value the live client would use)."""
+    first, then size the call and report its token usage to the sink. The stage is derived
+    from the method; the model is resolved from `settings` (the same value the live client
+    would use)."""
 
-    def __init__(self, inner: OpenAIClient, sink: CostSink, settings: Settings) -> None:
+    def __init__(self, inner: OpenAIClient, sink: UsageSink, settings: Settings) -> None:
         self.inner = inner  # the wrapped client (public so wiring can be introspected)
         self._sink = sink
         self._settings = settings
@@ -634,18 +592,12 @@ class MeteringOpenAIClient:
                 real.embed_tokens,
             )
         self._sink.add(
-            CostRecord(
+            UsageRecord(
                 stage=stage,
                 model=model,
                 prompt_tokens=prompt_tokens,
                 completion_tokens=completion_tokens,
                 embed_tokens=embed_tokens,
-                cost_usd=compute_cost_usd(
-                    model,
-                    prompt_tokens=prompt_tokens,
-                    completion_tokens=completion_tokens,
-                    embed_tokens=embed_tokens,
-                ),
             )
         )
 
@@ -655,7 +607,7 @@ class MeteringOpenAIClient:
         result = await self.inner.discover_sources(queries, allowed_domains=allowed_domains)
         self._record(
             "discovery",
-            self._settings.openai_search_model,
+            self._settings.openai_discovery_model,
             prompt_tokens=estimate_tokens(*queries),
             completion_tokens=estimate_tokens(*(source.url for source in result)),
         )
