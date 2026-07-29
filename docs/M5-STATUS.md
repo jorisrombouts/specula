@@ -17,7 +17,7 @@ Fan-out playbook + per-lane briefs: `docs/superpowers/specs/m5-*.md`.
 | **NET** | On-demand rate-limit gate (per-user cooldown + sliding 1h window; `RateLimitError` 429) on `POST /runs` + approve→ingest. Scraping politeness/provenance confirmed already shipped in M3. | `ratelimit.py`, `routers/{run,approval}.py` |
 | **OBS** | Structured JSON logging + request-id middleware + Sentry/OTel init hooks; metering OpenAI client capturing **real `.usage`** (estimate fallback for recorded mode) → `LlmCost` rows + `runs.cost_usd` rollup; per-run/per-day budget guard that halts. | `observability.py`, `pipeline/openai_client.py`, `services/run.py` |
 | **DATA** | GDPR `GET /account/export` (RLS-scoped `ExportBundle`, excludes `skills_taxonomy` + embedding vecs, includes `llm_costs`); `DELETE /account` FK cascade (caller-scoped); per-company opt-out, **enforced in ingest**. Web settings slice. | `routers/account.py`, `services/account.py`, `schemas/account.py`, web `settings/` |
-| **DASH** | Read-only run & cost dashboard (spend per stage/day/run + run status); sums the **ledger** (not `runs.cost_usd`, since ingest creates no Run); counts derived server-side; tenant-scoped. | `routers/dashboard.py`, `services/dashboard.py`, web `dashboard/` |
+| **DASH** | Read-only run & **token** dashboard (tokens per stage/day/run + run status); sums the **ledger**; counts derived server-side; tenant-scoped. | `routers/dashboard.py`, `services/dashboard.py`, web `dashboard/` |
 | **LOAD** | k6 load harness (`load/`, manual) + activated Playwright E2E for the M5 flows (dashboard, export, rate-limit-429). | `load/`, `apps/web/e2e/authed/*.spec.ts` |
 
 Every lane was reviewed (spec + tenancy + tests) and gated on branch/CI green before merge.
@@ -27,19 +27,16 @@ end once the pages existed, with regenerated Linux baselines.
 
 ## Follow-ups (M6 / backlog)
 
-**Cost accounting (OBS):**
-- Unknown model → `$0` cost — `compute_cost_usd` bills any model absent from `OPENAI_PRICING`
-  as free. Log a warning so an unlisted `openai_*_model` doesn't silently zero cost tracking.
-- Stage attribution: `enrich` is metered as stage `extract`; no `score` row (scoring cost
-  lands under `embed`/`rationale`). No cost dropped — DASH's by-stage reflects this grouping.
-- Budget-aborted ingest has no persisted signal (partial postings remain; DASH/UX can't show
-  "cost-capped").
-- `rationale()`'s `chat.completions.create` usage-capture path is untested (structurally
-  identical to the tested `.parse` path).
-- **Concurrency caveat:** the `last_usage` side-channel is safe only because pipeline calls
-  are strictly sequential today. If stages are ever parallelized (`asyncio.gather` over
-  postings sharing one client), interleaved calls could corrupt `last_usage`. Add a docstring
-  caveat / revisit before parallelizing.
+**Cost accounting (OBS):** *Resolved 2026-07-29 — Specula no longer tracks cost.* The
+`cost_usd` columns, the `OPENAI_PRICING` table, `compute_cost_usd`, and the USD budget
+guard were all removed; `llm_costs` records token counts only and the dashboard reports
+tokens. The unknown-model-bills-$0 bug, the budget-abort signal gap, and the stage
+attribution note are moot. **There is no spend ceiling of any kind** — the OpenAI
+account-level limit is now the only backstop.
+- Stage attribution (unchanged): `enrich` is metered as stage `extract`; no `score` row.
+- `rationale()`'s `chat.completions.create` usage-capture path is still untested.
+- **Concurrency caveat** (unchanged): the `last_usage` side-channel is safe only because
+  pipeline calls are strictly sequential today.
 
 **Export / delete (DATA):**
 - `ExportBundle` (9 frozen keys) omits `approvals`/`posting_state`/`user_settings` — which

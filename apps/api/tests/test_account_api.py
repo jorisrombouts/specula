@@ -1,5 +1,4 @@
 import uuid
-from decimal import Decimal
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -103,7 +102,6 @@ async def _seed_user_data(user_id: uuid.UUID, *, domain: str) -> dict[str, uuid.
                     model="gpt-4o-mini",
                     prompt_tokens=10,
                     completion_tokens=5,
-                    cost_usd=Decimal("0.001500"),
                 ),
                 Approval(user_id=user_id, name="Candidate Co"),
                 Targeting(user_id=user_id, role_titles=["ML Eng"]),

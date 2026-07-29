@@ -1,13 +1,12 @@
-"""OBS lane: cost capture, run-timing and tenant isolation for the ledger that
+"""OBS lane: usage capture, run-timing and tenant isolation for the ledger that
 services/run.py writes. Fixtures are the committed recorded pipeline fixtures; OpenAI results
 are hand-built stubs (see test_pipeline_integration for why) wrapped in the real metering client
-so token/cost math is exercised end to end — no live spend."""
+so token accounting is exercised end to end — no live spend."""
 
 import json
 import logging
 from collections.abc import Iterator, Sequence
 from datetime import UTC, datetime
-from decimal import Decimal
 from pathlib import Path
 from uuid import UUID
 
@@ -17,19 +16,19 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from test_db import requires_db
 
-from specula_api.config import OPENAI_PRICING, Settings
+from specula_api.config import Settings
 from specula_api.db.models import Approval, CandidateProfile, Company, Lens, LlmCost, Targeting
 from specula_api.observability import ContextFilter, JsonFormatter, configure_logging
 from specula_api.pipeline.deps import PipelineDeps
 from specula_api.pipeline.discovery import build_seed_queries
 from specula_api.pipeline.http import RecordedFetcher
 from specula_api.pipeline.openai_client import (
-    CostSink,
     EnrichResult,
     ExtractionResult,
     MeteringOpenAIClient,
     RecordedOpenAIClient,
     Source,
+    UsageSink,
 )
 from specula_api.services.approval import apply_decision
 from specula_api.services.run import create_run, ingest_company, run_discovery
@@ -90,14 +89,14 @@ class _IngestOpenAI:
         return None
 
 
-def _metered_deps(inner: _IngestOpenAI, sink: CostSink) -> PipelineDeps:
+def _metered_deps(inner: _IngestOpenAI, sink: UsageSink) -> PipelineDeps:
     settings = Settings()
     return PipelineDeps(
         openai=MeteringOpenAIClient(inner, sink, settings),
         fetcher=RecordedFetcher(FIXTURES_DIR),
         settings=settings,
         now=lambda: FROZEN_NOW,
-        cost_sink=sink,
+        usage_sink=sink,
     )
 
 
@@ -111,7 +110,7 @@ async def _seed(session: AsyncSession, user_id: UUID) -> str:
         )
     )
     session.add(CandidateProfile(user_id=user_id, skills=["Python", "PostgreSQL"]))
-    # No discovery seeds here: these are cost tests, and an empty-seed lens emits exactly one
+    # No discovery seeds here: these are usage tests, and an empty-seed lens emits exactly one
     # composed query, keeping the discovery run to a single measurable web search.
     lens = Lens(user_id=user_id, name="Remote EU", seeds=[], scope="Remote EU", active=True)
     session.add(lens)
@@ -120,22 +119,12 @@ async def _seed(session: AsyncSession, user_id: UUID) -> str:
     return query.text
 
 
-def _expected_cost(row: LlmCost) -> Decimal:
-    price = OPENAI_PRICING[row.model]
-    usd = (
-        row.prompt_tokens * price["prompt"]
-        + row.completion_tokens * price["completion"]
-        + row.embed_tokens * price["embed"]
-    ) / 1_000_000
-    return Decimal(str(usd)).quantize(Decimal("0.000001"))
-
-
 async def _rows(session: AsyncSession, user_id: UUID) -> list[LlmCost]:
     return list(await session.scalars(select(LlmCost).where(LlmCost.user_id == user_id)))
 
 
 @requires_db
-async def test_ingest_writes_llm_cost_rows_with_stage_model_and_pricing_cost(
+async def test_ingest_writes_llm_cost_rows_with_stage_model_and_tokens(
     db_session: AsyncSession,
 ) -> None:
     user = await make_user(db_session)
@@ -144,7 +133,7 @@ async def test_ingest_writes_llm_cost_rows_with_stage_model_and_pricing_cost(
 
     setup = _metered_deps(
         _IngestOpenAI({query: [Source(url=_DISCOVERED_JOB_URL, title="Senior Backend Engineer")]}),
-        CostSink(),
+        UsageSink(),
     )
     run = await create_run(db_session, user.id)
     await run_discovery(db_session, user.id, run.id, setup)
@@ -158,7 +147,7 @@ async def test_ingest_writes_llm_cost_rows_with_stage_model_and_pricing_cost(
     _, company_id = decided
     assert company_id is not None
 
-    ingest_sink = CostSink()
+    ingest_sink = UsageSink()
     ingest_deps = _metered_deps(_IngestOpenAI({}), ingest_sink)
     await ingest_company(db_session, user.id, company_id, ingest_deps)
 
@@ -167,13 +156,11 @@ async def test_ingest_writes_llm_cost_rows_with_stage_model_and_pricing_cost(
         for r in await _rows(db_session, user.id)
         if r.run_id is None and r.company_id == company_id
     ]
-    assert ingest_rows, "ingest wrote no cost rows"
+    assert ingest_rows, "ingest wrote no usage rows"
 
     settings = Settings()
     by_stage = {r.stage for r in ingest_rows}
     assert {"extract", "embed", "rationale"} <= by_stage
-    for row in ingest_rows:
-        assert row.cost_usd == _expected_cost(row)
     extract_rows = [r for r in ingest_rows if r.stage == "extract"]
     assert all(r.model == settings.openai_extract_model for r in extract_rows)
     embed_rows = [r for r in ingest_rows if r.stage == "embed"]
@@ -193,7 +180,7 @@ async def test_ingest_skips_opted_out_company(db_session: AsyncSession) -> None:
         db_session,
         user.id,
         company.id,
-        _metered_deps(_IngestOpenAI({}), CostSink()),
+        _metered_deps(_IngestOpenAI({}), UsageSink()),
     )
 
     assert [r for r in await _rows(db_session, user.id) if r.company_id == company.id] == []
@@ -201,24 +188,22 @@ async def test_ingest_skips_opted_out_company(db_session: AsyncSession) -> None:
 
 
 @requires_db
-async def test_discovery_run_records_cost_rollup_and_duration(db_session: AsyncSession) -> None:
+async def test_discovery_run_records_usage_rows_and_duration(db_session: AsyncSession) -> None:
     user = await make_user(db_session)
     await set_tenant(db_session, user.id)
     query = await _seed(db_session, user.id)
 
-    sink = CostSink()
+    sink = UsageSink()
     deps = _metered_deps(_IngestOpenAI({query: [Source(url=_DISCOVERED_JOB_URL, title="x")]}), sink)
     run = await create_run(db_session, user.id)
     await run_discovery(db_session, user.id, run.id, deps)
 
     assert run.status == "done"
     assert run.duration_ms is not None
-    assert run.cost_usd is not None
     discovery_rows = [
         r for r in await _rows(db_session, user.id) if r.run_id == run.id and r.stage == "discovery"
     ]
     assert discovery_rows
-    assert run.cost_usd == sum((r.cost_usd for r in discovery_rows), Decimal("0"))
 
 
 @requires_db
@@ -227,9 +212,7 @@ async def test_llm_costs_are_tenant_isolated(db_session: AsyncSession) -> None:
     b = await make_user(db_session)
 
     await set_tenant(db_session, a.id)
-    db_session.add(
-        LlmCost(user_id=a.id, stage="score", model="gpt-4o-mini", cost_usd=Decimal("0.01"))
-    )
+    db_session.add(LlmCost(user_id=a.id, stage="score", model="gpt-4o-mini"))
     await db_session.flush()
     assert [r.id for r in await _rows(db_session, a.id)]  # A sees its own row
 
@@ -276,7 +259,7 @@ async def test_pipeline_stages_emit_stage_logs(
 
     deps = _metered_deps(
         _IngestOpenAI({query: [Source(url=_DISCOVERED_JOB_URL, title="Senior Backend Engineer")]}),
-        CostSink(),
+        UsageSink(),
     )
     run = await create_run(db_session, user.id)
     await run_discovery(db_session, user.id, run.id, deps)

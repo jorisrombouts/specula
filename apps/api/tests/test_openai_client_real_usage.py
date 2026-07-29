@@ -16,14 +16,13 @@ import pytest
 
 from specula_api.config import Settings
 from specula_api.pipeline.openai_client import (
-    CostSink,
     ExtractionResult,
     MeteringOpenAIClient,
     OpenAIResponsesClient,
     RealUsage,
     RecordedOpenAIClient,
     RecordingOpenAIClient,
-    compute_cost_usd,
+    UsageSink,
     estimate_tokens,
 )
 
@@ -124,7 +123,7 @@ async def test_metering_records_real_usage_not_the_char_estimate(
     monkeypatch.setattr(client._client.chat.completions, "parse", fake_parse)
 
     settings = Settings(openai_api_key="test-key")
-    sink = CostSink()
+    sink = UsageSink()
     metered = MeteringOpenAIClient(client, sink, settings)
 
     page_text = "short page"  # ~4-chars/token estimate would be tiny, nowhere near 1234/567
@@ -134,9 +133,6 @@ async def test_metering_records_real_usage_not_the_char_estimate(
     assert rec.prompt_tokens == 1234
     assert rec.completion_tokens == 567
     assert rec.prompt_tokens != estimate_tokens(page_text, "")
-    assert rec.cost_usd == compute_cost_usd(
-        settings.openai_extract_model, prompt_tokens=1234, completion_tokens=567
-    )
 
 
 async def test_embed_captures_real_usage_as_embed_tokens(
@@ -193,7 +189,7 @@ async def test_missing_dot_usage_falls_back_to_estimate(monkeypatch: pytest.Monk
     monkeypatch.setattr(client._client.chat.completions, "parse", fake_parse)
 
     settings = Settings(openai_api_key="test-key")
-    sink = CostSink()
+    sink = UsageSink()
     metered = MeteringOpenAIClient(client, sink, settings)
 
     page_text = "short page"
@@ -207,7 +203,7 @@ async def test_missing_dot_usage_falls_back_to_estimate(monkeypatch: pytest.Monk
 
 async def test_recorded_client_has_no_usage_channel_so_metering_estimates() -> None:
     settings = Settings()
-    sink = CostSink()
+    sink = UsageSink()
     recorded = RecordedOpenAIClient(FIXTURES_DIR)
     metered = MeteringOpenAIClient(recorded, sink, settings)
 

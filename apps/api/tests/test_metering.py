@@ -1,17 +1,16 @@
-"""Unit tests for the OpenAI cost-metering seam (OBS lane): MeteringOpenAIClient + CostSink.
+"""Unit tests for the OpenAI usage-metering seam (OBS lane): MeteringOpenAIClient + UsageSink.
 No DB, no network — a hand-built inner stub supplies outputs."""
 
 from collections.abc import Sequence
-from decimal import Decimal
 
-from specula_api.config import OPENAI_PRICING, Settings
+from specula_api.config import Settings
 from specula_api.pipeline.openai_client import (
-    CostRecord,
-    CostSink,
     EnrichResult,
     ExtractionResult,
     MeteringOpenAIClient,
     Source,
+    UsageRecord,
+    UsageSink,
     estimate_tokens,
 )
 
@@ -58,19 +57,9 @@ class _StubOpenAI:
         self.calls.append("aclose")
 
 
-def _pricing_cost(rec: CostRecord) -> Decimal:
-    price = OPENAI_PRICING[rec.model]
-    usd = (
-        rec.prompt_tokens * price["prompt"]
-        + rec.completion_tokens * price["completion"]
-        + rec.embed_tokens * price["embed"]
-    ) / 1_000_000
-    return Decimal(str(usd)).quantize(Decimal("0.000001"))
-
-
-def _metered() -> tuple[MeteringOpenAIClient, _StubOpenAI, CostSink]:
+def _metered() -> tuple[MeteringOpenAIClient, _StubOpenAI, UsageSink]:
     settings = Settings()
-    sink = CostSink()
+    sink = UsageSink()
     inner = _StubOpenAI()
     return MeteringOpenAIClient(inner, sink, settings), inner, sink
 
@@ -89,7 +78,7 @@ async def test_metering_delegates_and_returns_inner_result() -> None:
     assert inner.calls == ["extract_posting"]
 
 
-async def test_each_call_records_one_row_with_stage_model_and_pricing_cost() -> None:
+async def test_each_call_records_one_row_with_stage_model_and_tokens() -> None:
     metered, _, sink = _metered()
     settings = Settings()
 
@@ -109,12 +98,9 @@ async def test_each_call_records_one_row_with_stage_model_and_pricing_cost() -> 
         ("rationale", settings.openai_rationale_model),
         ("discovery", settings.openai_rationale_model),
     ]
-    # every stored cost equals the OPENAI_PRICING formula applied to its token counts
-    for rec in sink.records:
-        assert rec.cost_usd == _pricing_cost(rec)
 
 
-async def test_embed_row_bills_only_embed_tokens() -> None:
+async def test_embed_row_records_only_embed_tokens() -> None:
     metered, _, sink = _metered()
     await metered.embed(["python", "postgres"])
     [rec] = sink.records
@@ -131,23 +117,15 @@ async def test_empty_embed_records_nothing() -> None:
 
 def test_usage_sink_never_caps_regardless_of_volume() -> None:
     """The budget guard was removed (2026-07-29). A sink accumulates without limit."""
-    sink = CostSink()
+    sink = UsageSink()
     for _ in range(50):
         sink.add(
-            CostRecord(
+            UsageRecord(
                 stage="rationale",
                 model="gpt-4o",
                 prompt_tokens=1_000_000,
                 completion_tokens=1_000_000,
                 embed_tokens=0,
-                cost_usd=Decimal("12.50"),
             )
         )
     assert len(sink.records) == 50
-
-
-def test_costsink_total_sums_records() -> None:
-    sink = CostSink()
-    sink.add(CostRecord("embed", "text-embedding-3-small", 0, 0, 10, Decimal("0.01")))
-    sink.add(CostRecord("extract", "gpt-4o-mini", 100, 20, 0, Decimal("0.02")))
-    assert sink.total == Decimal("0.03")

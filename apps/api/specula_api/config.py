@@ -90,12 +90,4 @@ class Settings(BaseSettings):
     otel_enabled: bool = False
 
 
-# USD per 1,000,000 tokens. Embedding models bill only on `embed`.
-# Verify rates against current OpenAI pricing before going live.
-OPENAI_PRICING: dict[str, dict[str, float]] = {
-    "gpt-4o": {"prompt": 2.50, "completion": 10.00, "embed": 0.0},
-    "gpt-4o-mini": {"prompt": 0.15, "completion": 0.60, "embed": 0.0},
-    "text-embedding-3-small": {"prompt": 0.0, "completion": 0.0, "embed": 0.02},
-}
-
 settings = Settings()

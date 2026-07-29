@@ -1,4 +1,4 @@
-from specula_api.config import OPENAI_PRICING, Settings, settings
+from specula_api.config import Settings, settings
 
 
 def test_discovery_defaults() -> None:
@@ -6,7 +6,6 @@ def test_discovery_defaults() -> None:
     assert s.discovery_max_searches == 10
     # gpt-4o (not mini): mini rejects the web_search allowed_domains filter discovery needs.
     assert s.openai_discovery_model == "gpt-4o"
-    assert s.openai_discovery_model in OPENAI_PRICING  # priced for the cost ledger
 
 
 def test_m5_settings_present() -> None:
@@ -15,15 +14,3 @@ def test_m5_settings_present() -> None:
     assert settings.log_level == "INFO"
     assert settings.sentry_dsn is None
     assert settings.otel_enabled is False
-
-
-def test_pricing_covers_configured_models() -> None:
-    for m in (
-        settings.openai_search_model,
-        settings.openai_discovery_model,
-        settings.openai_extract_model,
-        settings.openai_embed_model,
-        settings.openai_rationale_model,
-    ):
-        assert m in OPENAI_PRICING
-        assert {"prompt", "completion", "embed"} <= set(OPENAI_PRICING[m])

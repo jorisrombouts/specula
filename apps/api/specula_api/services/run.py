@@ -1,6 +1,5 @@
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from decimal import Decimal
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -24,22 +23,21 @@ from specula_api.pipeline.util import favicon_url
 _log = get_logger("pipeline.run")
 
 
-async def _persist_costs(
+async def _persist_usage(
     session: AsyncSession,
     user_id: UUID,
     deps: PipelineDeps,
     *,
     run_id: UUID | None,
     company_id: UUID | None,
-) -> Decimal:
-    """Drain the cost sink into `llm_costs` rows (one per metered call) and return their total.
-    Company ingest creates no Run, so its rows carry `run_id=None, company_id=<id>` (OBS→DASH
-    contract). Draining makes this safe to call once per run/ingest without double-counting."""
-    sink = deps.cost_sink
+) -> None:
+    """Drain the usage sink into `llm_costs` rows (one per metered call). Company ingest
+    creates no Run, so its rows carry `run_id=None, company_id=<id>` (OBS→DASH contract).
+    Draining makes this safe to call once per run/ingest without double-counting."""
+    sink = deps.usage_sink
     if sink is None:
-        return Decimal("0")
+        return
     created_at = deps.now()
-    total = Decimal("0")
     for record in sink.records:
         session.add(
             LlmCost(
@@ -51,14 +49,11 @@ async def _persist_costs(
                 prompt_tokens=record.prompt_tokens,
                 completion_tokens=record.completion_tokens,
                 embed_tokens=record.embed_tokens,
-                cost_usd=record.cost_usd,
                 created_at=created_at,
             )
         )
-        total += record.cost_usd
     sink.records.clear()
     await session.flush()
-    return total
 
 
 async def create_run(session: AsyncSession, user_id: UUID, kind: str = "on_demand") -> Run:
@@ -130,9 +125,7 @@ async def run_discovery(
                 "low_conf_excluded": 0,
                 "errors": result.errors,
             }
-            run.cost_usd = await _persist_costs(
-                session, user_id, deps, run_id=run_id, company_id=None
-            )
+            await _persist_usage(session, user_id, deps, run_id=run_id, company_id=None)
             await finalize_run(session, run, stats, status="done")
             _log.info("run.discovery.done", extra={"stage": "discovery"})
         except Exception:
@@ -178,9 +171,7 @@ async def run_rescore(
                 "errors": 0,
                 "scored": scored,
             }
-            run.cost_usd = await _persist_costs(
-                session, user_id, deps, run_id=run_id, company_id=None
-            )
+            await _persist_usage(session, user_id, deps, run_id=run_id, company_id=None)
             await finalize_run(session, run, stats, status="done")
             _log.info("run.rescore.done", extra={"stage": "score", "scored": scored})
         except Exception:
@@ -237,7 +228,7 @@ async def ingest_company(
             await _ingest_pipeline(session, user_id, company, deps)
             _log.info("ingest.done", extra={"company_id": str(company.id)})
         finally:
-            await _persist_costs(session, user_id, deps, run_id=None, company_id=company.id)
+            await _persist_usage(session, user_id, deps, run_id=None, company_id=company.id)
 
 
 async def _ingest_pipeline(
@@ -396,7 +387,7 @@ async def run_refresh(
 ) -> None:
     """Re-crawl all tracked companies for new jobs, wrapped in a Run for the same cost ledger +
     observability as discovery (mirrors `run_rescore`). Per-company ingest keys its own cost
-    rows to the company, so this run's `cost_usd` rollup is 0 by design."""
+    rows to the company."""
     run = await get_run(session, user_id, run_id)
     if run is None:
         return
@@ -417,9 +408,7 @@ async def run_refresh(
                 "errors": 0,
                 "scored": 0,
             }
-            run.cost_usd = await _persist_costs(
-                session, user_id, deps, run_id=run_id, company_id=None
-            )
+            await _persist_usage(session, user_id, deps, run_id=run_id, company_id=None)
             await finalize_run(session, run, stats, status="done")
             _log.info("run.refresh.done", extra={"stage": "fetch", "new": new})
         except Exception:

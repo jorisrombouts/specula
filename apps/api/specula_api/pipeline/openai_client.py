@@ -7,7 +7,6 @@ import re
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import date
-from decimal import Decimal
 from pathlib import Path
 from typing import Protocol, TypeVar
 
@@ -16,7 +15,7 @@ from openai.types.responses import Response, ResponseFunctionWebSearch, WebSearc
 from openai.types.responses.response_function_web_search import ActionSearch
 from pydantic import BaseModel, Field, TypeAdapter
 
-from specula_api.config import OPENAI_PRICING, Settings
+from specula_api.config import Settings
 
 _EMBED_DIM = 1536
 
@@ -509,8 +508,8 @@ class RecordingOpenAIClient:
 
 
 # ---------------------------------------------------------------------------
-# Cost metering — wraps any OpenAIClient, sizes each call and reports its USD cost to a sink.
-# One CostRecord = one OpenAI call; services/run.py turns records into `llm_costs` rows (OBS→DASH).
+# Token metering — wraps any OpenAIClient, sizes each call and reports its token usage to a sink.
+# One UsageRecord = one OpenAI call; services/run.py turns records into `llm_costs` rows (OBS→DASH).
 # ---------------------------------------------------------------------------
 
 # The OpenAI seam returns PARSED domain objects, so a live response's real `.usage` is not part
@@ -531,47 +530,28 @@ def estimate_tokens(*texts: str) -> int:
     return max(1, -(-chars // _CHARS_PER_TOKEN))
 
 
-def compute_cost_usd(
-    model: str, *, prompt_tokens: int = 0, completion_tokens: int = 0, embed_tokens: int = 0
-) -> Decimal:
-    """USD cost of one call from `config.OPENAI_PRICING` (USD per 1M tokens), rounded to the
-    `llm_costs.cost_usd` Numeric(12, 6) scale. Unknown models bill as free (never crash a run)."""
-    price = OPENAI_PRICING.get(model, {"prompt": 0.0, "completion": 0.0, "embed": 0.0})
-    usd = (
-        prompt_tokens * price["prompt"]
-        + completion_tokens * price["completion"]
-        + embed_tokens * price["embed"]
-    ) / 1_000_000
-    return Decimal(str(usd)).quantize(Decimal("0.000001"))
-
-
 @dataclass(frozen=True)
-class CostRecord:
-    """One metered OpenAI call. `stage` ∈ {discovery, extract, embed, score, rationale}."""
+class UsageRecord:
+    """One metered OpenAI call. `stage` ∈ {discovery, extract, embed, score, rationale}.
+    Tokens only — Specula does not price calls (2026-07-29)."""
 
     stage: str
     model: str
     prompt_tokens: int
     completion_tokens: int
     embed_tokens: int
-    cost_usd: Decimal
 
 
 @dataclass
-class CostSink:
-    """Accumulates a run/ingest's `CostRecord`s.
+class UsageSink:
+    """Accumulates a run/ingest's `UsageRecord`s.
 
-    In-memory only — services/run.py reads `records` afterward to write `llm_costs` rows. There
-    is no spend ceiling: the USD budget guard was removed on 2026-07-29 (tokens are metered,
-    cost is not). Nothing here aborts a run."""
+    In-memory only — services/run.py reads `records` afterward to write `llm_costs` rows.
+    There is no spend ceiling: the USD budget guard was removed on 2026-07-29."""
 
-    records: list[CostRecord] = field(default_factory=list)
+    records: list[UsageRecord] = field(default_factory=list)
 
-    @property
-    def total(self) -> Decimal:
-        return sum((rec.cost_usd for rec in self.records), Decimal("0"))
-
-    def add(self, record: CostRecord) -> None:
+    def add(self, record: UsageRecord) -> None:
         self.records.append(record)
 
 
@@ -580,7 +560,7 @@ class MeteringOpenAIClient:
     first, then size the call and report its cost to the sink. The stage is derived from the
     method; the model is resolved from `settings` (the same value the live client would use)."""
 
-    def __init__(self, inner: OpenAIClient, sink: CostSink, settings: Settings) -> None:
+    def __init__(self, inner: OpenAIClient, sink: UsageSink, settings: Settings) -> None:
         self.inner = inner  # the wrapped client (public so wiring can be introspected)
         self._sink = sink
         self._settings = settings
@@ -611,18 +591,12 @@ class MeteringOpenAIClient:
                 real.embed_tokens,
             )
         self._sink.add(
-            CostRecord(
+            UsageRecord(
                 stage=stage,
                 model=model,
                 prompt_tokens=prompt_tokens,
                 completion_tokens=completion_tokens,
                 embed_tokens=embed_tokens,
-                cost_usd=compute_cost_usd(
-                    model,
-                    prompt_tokens=prompt_tokens,
-                    completion_tokens=completion_tokens,
-                    embed_tokens=embed_tokens,
-                ),
             )
         )
 
