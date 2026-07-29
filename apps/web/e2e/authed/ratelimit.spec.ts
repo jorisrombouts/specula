@@ -76,4 +76,49 @@ test.describe("Run-trigger rate limit", () => {
     expect(typeof body.retryAfterS).toBe("number");
     expect(body.retryAfterS).toBeGreaterThan(0);
   });
+
+  // The sibling test above proves FastAPI emits the 429; this one proves the user is told.
+  // It covers the other half of the path — BFF route → triggerError → useLatestRun → the
+  // HeaderRefresh status line — which the contract test deliberately bypasses.
+  //
+  // The 429 is stubbed at the browser boundary rather than driven by the real limiter: the
+  // browser session is the SHARED demo user (DEV_AUTH_BYPASS), so exhausting its cooldown
+  // for real would leave it rate-limited for refresh.spec.ts — the exact poisoning the
+  // dedicated-sub isolation above exists to prevent. The frozen RateLimitError shape is what
+  // ties the two halves together: the contract test asserts the server emits it, this one
+  // asserts the UI renders it.
+  test("a rate-limited trigger shows the retry-after alert to the user", async ({
+    page,
+  }) => {
+    await page.addInitScript(() => {
+      try {
+        sessionStorage.setItem("specula_intro", "1");
+      } catch {}
+    });
+
+    // Only the trigger POST is stubbed — /api/runs/latest (polled separately) is untouched.
+    await page.route("**/api/runs", async (route) => {
+      if (route.request().method() !== "POST") return route.fallback();
+      await route.fulfill({
+        status: 429,
+        contentType: "application/json",
+        body: JSON.stringify({ error: "rate_limited", retryAfterS: 42 }),
+      });
+    });
+
+    await page.goto("/approvals");
+    const button = page.getByRole("button", { name: /find new companies/i });
+    await expect(button).toBeVisible();
+
+    await button.click();
+
+    // The warn-styled status line under the button. Scoped by data-sync-line rather than
+    // role alone: Next's route announcer is also role="alert", so a bare getByRole("alert")
+    // is ambiguous. The selector still pins the role — that's the a11y contract.
+    await expect(page.locator("[data-sync-line][role='alert']")).toHaveText(
+      "Rate-limited — try again in 42s.",
+    );
+    // The trigger must release, not stay stuck in its "Searching…" busy state.
+    await expect(button).toBeEnabled();
+  });
 });

@@ -53,15 +53,22 @@ end once the pages existed, with regenerated Linux baselines.
 - In-Python aggregation (no SQL `SUM`/`GROUP BY`, no `LIMIT` before slicing `recentRuns`).
   Fine at current scale; revisit if a tenant's row counts grow large.
 
-**BFF + rate-limit UX (the two are linked):**
-- **BFF error-propagation gap:** `bffFetch` (`apps/web/src/lib/api/bff.ts` via the
-  `app/api/*/route.ts` handlers) discards a non-2xx upstream status/body and throws → the
-  browser gets an opaque **500**, never the real status/body. Fix it to propagate upstream
-  status + body.
-- **Rate-limit UI surfacing** (needs the BFF fix first): the 429 is enforced server-side but
-  never shown to the user (`use-latest-run.ts` swallows the error). Surface it (toast/inline
-  message). *(LOAD's `ratelimit.spec.ts` asserts the backend 429 directly today, with this
-  deferral documented in-spec.)*
+**BFF + rate-limit UX (the two are linked): SHIPPED.**
+- **BFF error-propagation gap — fixed.** `bffFetchRaw` returns the raw upstream `Response`
+  without throwing, and the route handlers (`api/runs`, `runs/rescore`, `runs/refresh`,
+  `runs/[id]`, `approvals/[id]/decision`) forward FastAPI's real status + body instead of
+  collapsing to an opaque 500. `bffFetch` keeps its throw-on-non-2xx default for the many
+  routes that want it.
+- **Rate-limit UI surfacing — fixed.** A 429 is parsed into `Rate-limited — try again in
+  {retryAfterS}s.` (`lib/api/runs.ts:triggerError`, `lib/api/approvals.ts`) and rendered as a
+  warn-styled `role="alert"` status line — `HeaderRefresh` for the run triggers, the queue
+  header for approvals.
+- Verified end-to-end against the real limiter (unstubbed): trigger #1 → 201, trigger #2 →
+  429 `{"error":"rate_limited","retryAfterS":57}` propagated through the BFF route to the
+  browser, rendering "Rate-limited — try again in 57s.".
+- `ratelimit.spec.ts` now covers **both** halves: the original test asserts FastAPI's 429
+  contract over the network; a second test drives the button and asserts the alert the user
+  actually sees.
 
 **Foundation minors:**
 - `test_m5_migration`'s fail-closed RLS test is weak (asserts zero rows on an empty table);
@@ -74,7 +81,8 @@ end once the pages existed, with regenerated Linux baselines.
   (Arq vs Celery; Fly.io vs Railway/Render). *The `services/run.py` `else` branches are the
   pre-built enqueue seam.*
 - **M6 — Polish & launch:** onboarding, empty/loading states, perf budget, security review,
-  keyboard-nav/a11y — plus the UI follow-ups above.
+  keyboard-nav/a11y — plus the remaining follow-ups above (the BFF + rate-limit UX pair is
+  done).
 
 ## Operational note
 During the LOAD-spec fix, a test `POST /runs` hit a **live-mode `uvicorn` (real OpenAI key,
