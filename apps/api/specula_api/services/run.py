@@ -33,7 +33,11 @@ async def _persist_usage(
 ) -> None:
     """Drain the usage sink into `llm_costs` rows (one per metered call). Company ingest
     creates no Run, so its rows carry `run_id=None, company_id=<id>` (OBS→DASH contract).
-    Draining makes this safe to call once per run/ingest without double-counting."""
+    Draining makes this safe to call once per run/ingest without double-counting. Attributes
+    the ENTIRE sink to the single `(run_id, company_id)` pair it's called with — correct today
+    because nothing meters between per-company ingests in `refresh_all_jobs`, but a top-level
+    metered call added to that loop (mirroring `rescore_all`) would silently bill its tokens
+    to the first company ingested."""
     sink = deps.usage_sink
     if sink is None:
         return
@@ -216,8 +220,10 @@ async def ingest_company(
     session: AsyncSession, user_id: UUID, company_id: UUID, deps: PipelineDeps
 ) -> None:
     """Enrich → fetch → extract → embed → dedup → score one company. Records its (dominant)
-    OpenAI spend as `llm_costs` rows keyed to the company (no Run exists for an ingest);
-    costs accrued are persisted regardless of outcome (finally)."""
+    OpenAI usage as `llm_costs` rows keyed to the company (no Run exists for an ingest); the
+    `finally` drains those rows into the session on every path, but an exception escaping the
+    pipeline still propagates and `tenant_session` rolls the whole ingest back — ledger rows
+    included — so a crashed ingest records nothing."""
     company = await session.get(Company, company_id)
     if company is None or company.user_id != user_id or company.opt_out:
         return

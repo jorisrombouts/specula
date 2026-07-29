@@ -20,6 +20,11 @@ Fan-out playbook + per-lane briefs: `docs/superpowers/specs/m5-*.md`.
 | **DASH** | Read-only run & **token** dashboard (tokens per stage/day/run + run status); sums the **ledger**; counts derived server-side; tenant-scoped. | `routers/dashboard.py`, `services/dashboard.py`, web `dashboard/` |
 | **LOAD** | k6 load harness (`load/`, manual) + activated Playwright E2E for the M5 flows (dashboard, export, rate-limit-429). | `load/`, `apps/web/e2e/authed/*.spec.ts` |
 
+**Superseded 2026-07-29:** the Foundation row's `runs.cost_usd`/`OPENAI_PRICING` and the OBS
+row's `runs.cost_usd` rollup and per-run/per-day budget guard were removed after M5 shipped —
+see the "Cost accounting (OBS)" follow-up below. This table stays as the historical record of
+what M5 actually delivered; it is not a description of the current schema or behavior.
+
 Every lane was reviewed (spec + tenancy + tests) and gated on branch/CI green before merge.
 The `dashboard`/`settings` sidebar nav was deferred during the fan-out (linking to
 not-yet-existent routes broke the visual harness's `networkidle` wait) and re-added at the

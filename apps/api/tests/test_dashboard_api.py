@@ -35,6 +35,7 @@ async def _set_tenant(session: object, user_id: uuid.UUID) -> None:
 
 DAY_A = datetime(2026, 7, 5, 12, tzinfo=UTC)
 DAY_B = datetime(2026, 7, 6, 12, tzinfo=UTC)
+DAY_C = datetime(2026, 7, 7, 12, tzinfo=UTC)
 
 
 async def _seed(
@@ -184,26 +185,34 @@ async def test_recent_runs_carry_derived_tokens_and_are_newest_first(
         runs=[
             {"kind": "scheduled", "status": "done", "created_at": DAY_A},
             {"kind": "on_demand", "status": "error", "duration_ms": 1234, "created_at": DAY_B},
+            {"kind": "refresh", "status": "done", "duration_ms": 4321, "created_at": DAY_C},
         ],
-        # Both rows belong to run index 1 — its total is DERIVED as their sum.
+        # Both rows belong to run index 1 — its total is DERIVED as their sum. Run index 2's
+        # only ledger row sums to exactly 0 tokens.
         costs=[
             {"stage": "discovery", "prompt_tokens": 700, "run": 1, "created_at": DAY_B},
             {"stage": "score", "completion_tokens": 300, "run": 1, "created_at": DAY_B},
+            {"stage": "embed", "run": 2, "created_at": DAY_C},
         ],
     )
 
     body = (await _get("/api/v1/dashboard", sub)).json()  # type: ignore[attr-defined]
     recent = body["recentRuns"]
-    assert len(recent) == 2
+    assert len(recent) == 3
     # Newest first.
-    assert recent[0]["kind"] == "on_demand"
-    assert recent[0]["status"] == "error"
-    assert recent[0]["tokens"]["totalTokens"] == 1000
-    assert recent[0]["tokens"]["durationMs"] == 1234
+    assert recent[0]["kind"] == "refresh"
+    # A linked ledger row that sums to 0 tokens must still serialize {"totalTokens": 0, ...} —
+    # NOT null. Null means no ledger row exists at all; distinguishing the two is exactly what
+    # a future `defaultdict`/`or 0` regression would silently break.
+    assert recent[0]["tokens"] == {"totalTokens": 0, "durationMs": 4321}
+    assert recent[1]["kind"] == "on_demand"
+    assert recent[1]["status"] == "error"
+    assert recent[1]["tokens"]["totalTokens"] == 1000
+    assert recent[1]["tokens"]["durationMs"] == 1234
     # A run with NO ledger rows serializes tokens as null — "nothing recorded" is
     # distinct from "recorded zero".
-    assert recent[1]["kind"] == "scheduled"
-    assert recent[1]["tokens"] is None
+    assert recent[2]["kind"] == "scheduled"
+    assert recent[2]["tokens"] is None
 
 
 @requires_db

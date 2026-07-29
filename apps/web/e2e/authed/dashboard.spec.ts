@@ -27,10 +27,15 @@ test.describe("Dashboard renders tokens", () => {
       page.getByRole("heading", { name: "Dashboard", level: 1 }),
     ).toBeVisible();
 
-    // totalTokens always renders as a number (the "Total LLM tokens" tile shows "0"
-    // when nothing has been recorded yet, never a placeholder) — present regardless
-    // of whether the seed produced any llm_costs rows.
-    await expect(page.getByText("Total LLM tokens")).toBeVisible();
+    // The "Total LLM tokens" tile's value renders in a sibling div next to the label (see
+    // the `Tile` component in dashboard-view.tsx) — assert it's actually digits (optionally
+    // comma-grouped), not just that the label is present. This is present regardless of
+    // whether the seed produced any llm_costs rows: "0" when nothing has been recorded yet.
+    const tokensLabel = page.getByText("Total LLM tokens", { exact: true });
+    await expect(tokensLabel).toBeVisible();
+    await expect(
+      tokensLabel.locator("xpath=following-sibling::div[1]"),
+    ).toHaveText(/^[\d,]+$/);
 
     // tokensByStage drives a per-stage breakdown. Accept either a real stage label
     // (usage data exists) or the panel's empty state (a fresh seed has none) — see

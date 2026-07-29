@@ -3,6 +3,8 @@ No DB, no network — a hand-built inner stub supplies outputs."""
 
 from collections.abc import Sequence
 
+import pytest
+
 from specula_api.config import Settings
 from specula_api.pipeline.openai_client import (
     EnrichResult,
@@ -91,13 +93,30 @@ async def test_each_call_records_one_row_with_stage_model_and_tokens() -> None:
 
     stages = [(r.stage, r.model) for r in sink.records]
     assert stages == [
-        ("discovery", settings.openai_search_model),
+        ("discovery", settings.openai_discovery_model),
         ("extract", settings.openai_extract_model),
         ("extract", settings.openai_extract_model),
         ("embed", settings.openai_embed_model),
         ("rationale", settings.openai_rationale_model),
         ("discovery", settings.openai_rationale_model),
     ]
+
+
+async def test_discovery_row_names_the_discovery_model_not_search_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression: `discover_sources` calls `openai_discovery_model` (see
+    `OpenAIResponsesClient._search`), so its metering row must name that setting — not the
+    unrelated, unused `openai_search_model` — even when the two diverge."""
+    settings = Settings()
+    monkeypatch.setattr(settings, "openai_discovery_model", "gpt-4o-mini")
+    sink = UsageSink()
+    metered = MeteringOpenAIClient(_StubOpenAI(), sink, settings)
+
+    await metered.discover_sources(["ml engineer jobs"])
+
+    [record] = sink.records
+    assert record.model == "gpt-4o-mini"
 
 
 async def test_embed_row_records_only_embed_tokens() -> None:

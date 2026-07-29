@@ -517,8 +517,8 @@ class RecordingOpenAIClient:
 # `last_usage` attribute (see its docstring), which `MeteringOpenAIClient._real_usage` reads.
 # CI/recorded mode never calls the API, so there is no `.usage` to capture there at all; tokens
 # are then ESTIMATED from the call's text at OpenAI's published ~4-chars-per-token guide.
-# Deterministic (same text → same count), which is what lets a recorded run assert an exact cost
-# and lets DASH's display agree with what we stored.
+# Deterministic (same text → same count), which is what lets a recorded run assert an exact
+# token count and lets DASH's display agree with what we stored.
 _CHARS_PER_TOKEN = 4
 
 
@@ -557,8 +557,9 @@ class UsageSink:
 
 class MeteringOpenAIClient:
     """Wraps an `OpenAIClient`, mirroring the `RecordingOpenAIClient` decorator shape: delegate
-    first, then size the call and report its cost to the sink. The stage is derived from the
-    method; the model is resolved from `settings` (the same value the live client would use)."""
+    first, then size the call and report its token usage to the sink. The stage is derived
+    from the method; the model is resolved from `settings` (the same value the live client
+    would use)."""
 
     def __init__(self, inner: OpenAIClient, sink: UsageSink, settings: Settings) -> None:
         self.inner = inner  # the wrapped client (public so wiring can be introspected)
@@ -606,7 +607,7 @@ class MeteringOpenAIClient:
         result = await self.inner.discover_sources(queries, allowed_domains=allowed_domains)
         self._record(
             "discovery",
-            self._settings.openai_search_model,
+            self._settings.openai_discovery_model,
             prompt_tokens=estimate_tokens(*queries),
             completion_tokens=estimate_tokens(*(source.url for source in result)),
         )

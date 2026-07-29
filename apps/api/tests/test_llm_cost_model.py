@@ -15,7 +15,7 @@ def test_run_has_no_cost_rollup() -> None:
     assert "cost_usd" not in set(Run.__table__.columns.keys())
 
 
-def test_company_optout_and_run_rollups_exist() -> None:
+def test_company_optout_and_run_duration_ms_exist() -> None:
     from specula_api.db.models import Company
 
     assert "opt_out" in Company.__table__.columns
