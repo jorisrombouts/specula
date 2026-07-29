@@ -1,4 +1,5 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
+import type { Job } from "@specula/shared-types";
 import {
   render,
   screen,
@@ -115,5 +116,85 @@ describe("JobsView", () => {
     expect(
       container.querySelector("article[data-fid][data-card]"),
     ).not.toBeNull();
+  });
+
+  // "Refresh jobs" completes -> JobsRefreshButton calls router.refresh() -> the server
+  // component re-renders and hands down a NEW pool prop. These two cover what the client
+  // does with that, and what it does when the re-fetch fails.
+  describe("when a refreshed pool prop arrives", () => {
+    afterEach(() => vi.unstubAllGlobals());
+
+    const brandNew = {
+      ...props.pool[0],
+      id: "job-new-1",
+      title: "Brand New Role",
+    };
+
+    // TweaksProvider also hits fetch (/api/tweaks), so the stub dispatches on URL rather
+    // than call order — otherwise a queued jobs response gets handed to the wrong caller.
+    // Returns the array of /api/jobs URLs actually requested.
+    type JobsReply = { jobs: Job[] } | "reject";
+    function stubFetch(replies: JobsReply[]): string[] {
+      const jobsCalls: string[] = [];
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (url: string) => {
+          if (!url.startsWith("/api/jobs")) {
+            return { ok: true, json: async () => ({}) };
+          }
+          const reply = replies[Math.min(jobsCalls.length, replies.length - 1)];
+          jobsCalls.push(url);
+          if (reply === "reject") throw new Error("network down");
+          return { ok: true, json: async () => reply };
+        }),
+      );
+      return jobsCalls;
+    }
+
+    it("re-fetches for the active lens and renders the new jobs", async () => {
+      // Mount gets the original pool; the pool change must drive a SECOND jobs fetch.
+      // Without it the new job never reaches the list.
+      const jobsCalls = stubFetch([
+        { jobs: props.pool },
+        { jobs: [brandNew, ...props.pool] },
+      ]);
+
+      const { rerender } = render(
+        <TweaksProvider>
+          <JobsView {...props} />
+        </TweaksProvider>,
+      );
+      await act(async () => {});
+      expect(jobsCalls).toHaveLength(1);
+      expect(screen.queryByText("Brand New Role")).toBeNull();
+
+      rerender(
+        <TweaksProvider>
+          <JobsView {...props} pool={[brandNew, ...props.pool]} />
+        </TweaksProvider>,
+      );
+      await act(async () => {});
+
+      expect(jobsCalls).toHaveLength(2);
+      expect(screen.getByText("Brand New Role")).toBeInTheDocument();
+    });
+
+    it("surfaces a failed lens fetch instead of silently showing the previous lens", async () => {
+      stubFetch([{ jobs: props.pool }, "reject"]);
+
+      render(
+        <TweaksProvider>
+          <JobsView {...props} />
+        </TweaksProvider>,
+      );
+      await act(async () => {});
+
+      // Switching lens triggers the second (failing) fetch. The rows on screen still
+      // belong to the previous lens, so the UI must say so rather than mislabel them.
+      fireEvent.click(screen.getByRole("button", { name: /Remote · EU/ }));
+      await act(async () => {});
+
+      expect(screen.getByRole("status")).toHaveTextContent(/couldn't load/i);
+    });
   });
 });

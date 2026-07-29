@@ -47,19 +47,35 @@ export function JobsView({
   // sort) re-fetches from the API, which filters + re-scores server-side per that lens —
   // the client no longer re-derives ranking (that logic was keyed to seed lens ids).
   const [list, setList] = useState<Job[]>(pool);
+  const [loadFailed, setLoadFailed] = useState(false);
+  // `pool` is a dependency because "Refresh jobs" finishes by calling router.refresh(),
+  // which re-renders the server component and hands down a NEW pool array. We re-fetch
+  // rather than adopt `pool` directly: `pool` is always the DEFAULT-lens list, so adopting
+  // it would silently discard the active lens's filtering. The array identity is the
+  // trigger, which is why `pool` is a dep it isn't read inside the effect.
   useEffect(() => {
     let cancelled = false;
     const params = new URLSearchParams({ lens, sort });
     fetch(`/api/jobs?${params}`)
       .then((r) => (r.ok ? (r.json() as Promise<JobsResponse>) : null))
       .then((data) => {
-        if (!cancelled && data) setList(data.jobs);
+        if (cancelled) return;
+        if (data) {
+          setList(data.jobs);
+          setLoadFailed(false);
+        } else {
+          setLoadFailed(true);
+        }
       })
-      .catch(() => {});
+      // The rows on screen still belong to the PREVIOUS lens/sort, so a silent failure
+      // would mislabel them as this lens's results. Say so instead.
+      .catch(() => {
+        if (!cancelled) setLoadFailed(true);
+      });
     return () => {
       cancelled = true;
     };
-  }, [lens, sort]);
+  }, [lens, sort, pool]);
 
   const activeLens = lenses.find((l) => l.id === lens) ?? lenses[0];
   const closingSoon = list.filter(
@@ -172,6 +188,18 @@ export function JobsView({
       </header>
 
       <LensBar lenses={lenses} active={lens} onSelect={setLens} />
+
+      {loadFailed && (
+        <div
+          role="status"
+          className="mt-[18px] flex items-center gap-[12px] rounded-[11px] border border-warn bg-warn-bg px-[18px] py-[13px] text-[13px] text-warn"
+        >
+          <span>
+            Couldn&apos;t load jobs for this lens — the roles below are the
+            previous results.
+          </span>
+        </div>
+      )}
 
       {closingSoon > 0 && (
         <div className="mt-[18px] flex items-center gap-[12px] rounded-[11px] border border-warn bg-warn-bg px-[18px] py-[13px] text-[13px] text-warn">
