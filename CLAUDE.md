@@ -26,8 +26,9 @@ instrument UI. Built in phases (M0–M6) from a Claude Design prototype.
   limits, GDPR export/delete + per-company opt-out, run & cost dashboard, k6 load + E2E). See
   `docs/M5-STATUS.md` (+ `docs/M4-STATUS.md`).
 - **Current focus (M6 — Polish & launch):** keyboard-nav/a11y, onboarding, empty/loading states,
-  perf budget, security review — plus M5 follow-ups (BFF error propagation → rate-limit UI surfacing;
-  see `docs/M5-STATUS.md`). *(Spec §18.)*
+  perf budget, security review — plus the remaining M5 follow-ups (cost accounting, GDPR export
+  breadth; the BFF error-propagation → rate-limit UI pair is shipped). See `docs/M5-STATUS.md`.
+  *(Spec §18.)*
 
 ## Stack & hosting (free-tier first)
 - Monorepo: `apps/api` (FastAPI · uv · ruff · mypy --strict · pytest) + `apps/web` (Next 16 · TS strict
