@@ -33,7 +33,8 @@ const summary: DashboardSummary = {
         scored: 0,
       },
       createdAt: "2026-07-06T12:00:00Z",
-      tokens: { totalTokens: 300, durationMs: 1234 },
+      durationMs: 1234,
+      tokens: { totalTokens: 300 },
     },
     {
       id: "r-1",

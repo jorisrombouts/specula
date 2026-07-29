@@ -183,7 +183,7 @@ async def test_recent_runs_carry_derived_tokens_and_are_newest_first(
     await _seed(
         sub=sub,
         runs=[
-            {"kind": "scheduled", "status": "done", "created_at": DAY_A},
+            {"kind": "scheduled", "status": "done", "duration_ms": 5555, "created_at": DAY_A},
             {"kind": "on_demand", "status": "error", "duration_ms": 1234, "created_at": DAY_B},
             {"kind": "refresh", "status": "done", "duration_ms": 4321, "created_at": DAY_C},
         ],
@@ -204,15 +204,17 @@ async def test_recent_runs_carry_derived_tokens_and_are_newest_first(
     # A linked ledger row that sums to 0 tokens must still serialize {"totalTokens": 0, ...} —
     # NOT null. Null means no ledger row exists at all; distinguishing the two is exactly what
     # a future `defaultdict`/`or 0` regression would silently break.
-    assert recent[0]["tokens"] == {"totalTokens": 0, "durationMs": 4321}
+    assert recent[0]["tokens"] == {"totalTokens": 0}
+    assert recent[0]["durationMs"] == 4321
     assert recent[1]["kind"] == "on_demand"
     assert recent[1]["status"] == "error"
     assert recent[1]["tokens"]["totalTokens"] == 1000
-    assert recent[1]["tokens"]["durationMs"] == 1234
+    assert recent[1]["durationMs"] == 1234
     # A run with NO ledger rows serializes tokens as null — "nothing recorded" is
-    # distinct from "recorded zero".
+    # distinct from "recorded zero" — but its duration is a property of the RUN and survives.
     assert recent[2]["kind"] == "scheduled"
     assert recent[2]["tokens"] is None
+    assert recent[2]["durationMs"] == 5555
 
 
 @requires_db

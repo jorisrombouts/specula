@@ -28,6 +28,7 @@ from specula_api.pipeline.openai_client import (
     MeteringOpenAIClient,
     RecordedOpenAIClient,
     Source,
+    UsageRecord,
     UsageSink,
 )
 from specula_api.services.approval import apply_decision
@@ -204,6 +205,52 @@ async def test_discovery_run_records_usage_rows_and_duration(db_session: AsyncSe
         r for r in await _rows(db_session, user.id) if r.run_id == run.id and r.stage == "discovery"
     ]
     assert discovery_rows
+
+
+@requires_db
+async def test_crashed_run_is_marked_error_and_does_not_escape(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A crashed run must not propagate out of `run_discovery`.
+
+    `trigger_discovery_run` wraps this in `tenant_session`, which rolls back and re-raises on
+    any escaping exception — so re-raising here discards BOTH the status="error" write and the
+    usage rows, leaving the run stuck at "queued" forever. The UI reads queued as in-progress
+    (`busy = status === "queued" || "running"`), so the button spins indefinitely.
+
+    The failure is injected at `discover` itself: discovery.py guards each query with its own
+    broad `except Exception`, so a raising OpenAI stub is absorbed into `result.errors` and the
+    run still finishes "done". Only an unhandled failure reaches the handler under test.
+    """
+    user = await make_user(db_session)
+    await set_tenant(db_session, user.id)
+    await _seed(db_session, user.id)
+
+    async def _explode(*args: object, **kwargs: object) -> object:
+        raise RuntimeError("discovery exploded")
+
+    monkeypatch.setattr("specula_api.services.run.discover", _explode)
+
+    sink = UsageSink()
+    sink.add(
+        UsageRecord(
+            stage="discovery",
+            model="gpt-4o",
+            prompt_tokens=120,
+            completion_tokens=30,
+            embed_tokens=0,
+        )
+    )
+    deps = _metered_deps(_IngestOpenAI({}), sink)
+    run = await create_run(db_session, user.id)
+
+    await run_discovery(db_session, user.id, run.id, deps)  # must not raise
+
+    assert run.status == "error"
+    assert run.finished_at is not None
+    # Tokens already spent before the crash are still owed to the ledger.
+    crashed_rows = [r for r in await _rows(db_session, user.id) if r.run_id == run.id]
+    assert [r.prompt_tokens for r in crashed_rows] == [120]
 
 
 @requires_db

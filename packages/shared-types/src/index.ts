@@ -113,7 +113,10 @@ export interface Run {
   id: string; kind: "scheduled" | "on_demand" | "rescore" | "refresh";
   status: "queued" | "running" | "done" | "error";
   startedAt: string | null; finishedAt: string | null;
-  stats: RunStats; createdAt: string; tokens?: RunTokens | null;
+  stats: RunStats; createdAt: string;
+  // How long the run took belongs to the RUN, not to its token usage: a refresh run keys its
+  // ledger rows to the company, so `tokens` is null while `durationMs` is still meaningful.
+  durationMs?: number | null; tokens?: RunTokens | null;
 }
 
 export interface LlmCost {
@@ -122,7 +125,7 @@ export interface LlmCost {
   promptTokens: number; completionTokens: number; embedTokens: number;
   createdAt: string;
 }
-export interface RunTokens { totalTokens: number; durationMs: number | null }
+export interface RunTokens { totalTokens: number }
 export interface TokenPoint { date: string; totalTokens: number; runs: number }
 export interface TokensByStage { stage: string; totalTokens: number }
 export interface DashboardSummary {

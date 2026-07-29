@@ -22,7 +22,6 @@ class RunStats(CamelModel):
 
 class RunTokens(CamelModel):
     total_tokens: int
-    duration_ms: int | None = None
 
 
 class RunOut(CamelModel):
@@ -33,6 +32,10 @@ class RunOut(CamelModel):
     finished_at: datetime | None
     stats: RunStats
     created_at: datetime
+    # How long the run took is a property of the RUN, not of its token usage — a refresh run
+    # keys its ledger rows to the company, so it has no rows of its own and `tokens` is null
+    # while `duration_ms` is still meaningful.
+    duration_ms: int | None = None
     tokens: RunTokens | None = None
 
     @classmethod
@@ -40,11 +43,6 @@ class RunOut(CamelModel):
         """`total_tokens` is DERIVED from the `llm_costs` ledger by the caller (the dashboard
         service) — runs store no usage rollup. Callers that don't need it omit it, and
         `tokens` stays None."""
-        tokens = (
-            RunTokens(total_tokens=total_tokens, duration_ms=run.duration_ms)
-            if total_tokens is not None
-            else None
-        )
         return cls(
             id=run.id,
             kind=run.kind,
@@ -53,5 +51,6 @@ class RunOut(CamelModel):
             finished_at=run.finished_at,
             stats=RunStats.model_validate(run.stats),
             created_at=run.created_at,
-            tokens=tokens,
+            duration_ms=run.duration_ms,
+            tokens=RunTokens(total_tokens=total_tokens) if total_tokens is not None else None,
         )

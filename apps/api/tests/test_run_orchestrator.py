@@ -104,9 +104,17 @@ async def test_run_discovery_transitions_queued_to_done_and_persists_stats(
 
 
 @requires_db
-async def test_run_discovery_error_path_sets_status_error_and_reraises(
+async def test_run_discovery_error_path_sets_status_error_without_reraising(
     db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """The failure must be absorbed here, not propagated.
+
+    This test drives `run_discovery` with a raw session, but production reaches it through
+    `trigger_discovery_run` → `tenant_session`, which rolls back and re-raises on anything that
+    escapes. Re-raising therefore discarded the status="error" write in production while this
+    test still saw it in-memory — the run was left at "queued", which the UI reads as
+    still-running. The errored Run row is the signal; the traceback goes to the log.
+    """
     user = await make_user(db_session)
     await set_tenant(db_session, user.id)
     run = await create_run(db_session, user.id)
@@ -117,8 +125,7 @@ async def test_run_discovery_error_path_sets_status_error_and_reraises(
 
     monkeypatch.setattr("specula_api.services.run.discover", _boom)
 
-    with pytest.raises(RuntimeError):
-        await run_discovery(db_session, user.id, run.id, deps)
+    await run_discovery(db_session, user.id, run.id, deps)
 
     assert run.status == "error"
     assert run.stats["errors"] == 1

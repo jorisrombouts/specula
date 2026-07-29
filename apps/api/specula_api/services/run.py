@@ -133,8 +133,13 @@ async def run_discovery(
             await finalize_run(session, run, stats, status="done")
             _log.info("run.discovery.done", extra={"stage": "discovery"})
         except Exception:
+            # Persist what we spent, mark the run errored, and DO NOT re-raise: letting this
+            # escape `tenant_session` rolls back the ledger rows AND the status write, leaving
+            # the run stuck at "queued" (which the UI reads as still-in-progress) with no trace
+            # of the failure. The errored run IS the signal; the log carries the traceback.
+            await _persist_usage(session, user_id, deps, run_id=run_id, company_id=None)
             await finalize_run(session, run, _ERROR_STATS, status="error")
-            raise
+            _log.exception("run.discovery.failed", extra={"stage": "discovery"})
 
 
 async def trigger_discovery_run(user_id: UUID, run_id: UUID) -> None:
@@ -179,8 +184,10 @@ async def run_rescore(
             await finalize_run(session, run, stats, status="done")
             _log.info("run.rescore.done", extra={"stage": "score", "scored": scored})
         except Exception:
+            # See run_discovery: swallowing is deliberate so the ledger + error status commit.
+            await _persist_usage(session, user_id, deps, run_id=run_id, company_id=None)
             await finalize_run(session, run, {**_ERROR_STATS, "scored": 0}, status="error")
-            raise
+            _log.exception("run.rescore.failed", extra={"stage": "score"})
 
 
 async def trigger_rescore_run(user_id: UUID, run_id: UUID) -> None:
@@ -418,8 +425,10 @@ async def run_refresh(
             await finalize_run(session, run, stats, status="done")
             _log.info("run.refresh.done", extra={"stage": "fetch", "new": new})
         except Exception:
+            # See run_discovery: swallowing is deliberate so the ledger + error status commit.
+            await _persist_usage(session, user_id, deps, run_id=run_id, company_id=None)
             await finalize_run(session, run, _ERROR_STATS, status="error")
-            raise
+            _log.exception("run.refresh.failed", extra={"stage": "fetch"})
 
 
 async def trigger_refresh_run(user_id: UUID, run_id: UUID) -> None:
