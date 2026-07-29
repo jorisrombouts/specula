@@ -3,17 +3,17 @@ import { test, expect } from "@playwright/test";
 // Runs under the `authed` project (baseURL :3001, DEV_AUTH_BYPASS=1) — the auth
 // guard is bypassed and views render the seeded demo tenant's real data.
 //
-// Targets the DASH lane's cost dashboard (/dashboard rendering a DashboardSummary:
-// totalCostUsd + costByStage + costByDay + recentRuns).
+// Targets the DASH lane's token dashboard (/dashboard rendering a DashboardSummary:
+// totalTokens + tokensByStage + tokensByDay + recentRuns).
 //
 // Self-sufficient by design: seed.py creates no llm_costs rows, so on a freshly-seeded
-// DB the "Spend by stage" panel renders its "No spend recorded yet." empty state
+// DB the "Tokens by stage" panel renders its "No tokens recorded yet." empty state
 // (dashboard-view.tsx) rather than per-stage rows. The stage assertion below accepts
-// either so this spec passes regardless of whether any run has generated cost data —
+// either so this spec passes regardless of whether any run has generated usage data —
 // it doesn't depend on another spec (e.g. refresh.spec.ts) having run first.
 
-test.describe("Dashboard renders spend", () => {
-  test("shows the total LLM spend and the per-stage breakdown", async ({
+test.describe("Dashboard renders tokens", () => {
+  test("shows the total LLM tokens and the per-stage breakdown", async ({
     page,
   }) => {
     await page.addInitScript(() => {
@@ -27,17 +27,19 @@ test.describe("Dashboard renders spend", () => {
       page.getByRole("heading", { name: "Dashboard", level: 1 }),
     ).toBeVisible();
 
-    // totalCostUsd always renders as a USD figure (the "Total LLM spend" tile shows
-    // "$0.00" when there's no spend yet, never a placeholder) — present regardless
+    // totalTokens always renders as a number (the "Total LLM tokens" tile shows "0"
+    // when nothing has been recorded yet, never a placeholder) — present regardless
     // of whether the seed produced any llm_costs rows.
-    await expect(page.getByText(/\$\s?\d/).first()).toBeVisible();
+    await expect(page.getByText("Total LLM tokens")).toBeVisible();
 
-    // costByStage drives a per-stage breakdown. Accept either a real stage label
-    // (cost data exists) or the panel's empty state (a fresh seed has none) — see
+    // tokensByStage drives a per-stage breakdown. Accept either a real stage label
+    // (usage data exists) or the panel's empty state (a fresh seed has none) — see
     // the file header for why both are valid here.
     await expect(
       page
-        .getByText(/extract|score|discover|embed|enrich|no spend recorded yet/i)
+        .getByText(
+          /extract|score|discover|embed|enrich|no tokens recorded yet/i,
+        )
         .first(),
     ).toBeVisible();
   });

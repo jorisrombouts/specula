@@ -2,8 +2,7 @@
 (packages/shared-types). The bundle's per-table arrays are typed `unknown[]` in TS — DATA
 owns the row shapes — so these models are the authoritative definition of each row. Embedding
 vectors (`*_vec`, 1536 floats) are excluded by omission: bulky and meaningless outside scoring.
-`llm_costs` mirrors the frozen `LlmCost` interface exactly (cost as a JSON number, not a
-Decimal string)."""
+`llm_costs` mirrors the frozen `LlmCost` interface exactly."""
 
 from datetime import date, datetime
 from typing import Any
@@ -121,13 +120,12 @@ class RunExport(CamelModel):
     started_at: datetime | None
     finished_at: datetime | None
     stats: dict[str, Any]
-    cost_usd: float | None
     duration_ms: int | None
     created_at: datetime
 
 
 class LlmCostExport(CamelModel):
-    """Serializes to the frozen `LlmCost` interface — cost as a JSON number."""
+    """Serializes to the frozen `LlmCost` interface — token counts only."""
 
     id: UUID
     run_id: UUID | None
@@ -137,7 +135,6 @@ class LlmCostExport(CamelModel):
     prompt_tokens: int
     completion_tokens: int
     embed_tokens: int
-    cost_usd: float
     created_at: datetime
 
 

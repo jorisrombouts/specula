@@ -1,7 +1,7 @@
 import type { DashboardSummary, Run } from "@specula/shared-types";
 
-function usd(n: number, dp = 2): string {
-  return `$${n.toFixed(dp)}`;
+function tokens(n: number): string {
+  return n.toLocaleString("en-US");
 }
 
 // Tailwind background token per run status (queued/running/done/error).
@@ -57,8 +57,8 @@ function Bar({ frac }: { frac: number }) {
 }
 
 export function DashboardView({ summary: s }: { summary: DashboardSummary }) {
-  const stageMax = Math.max(1e-9, ...s.costByStage.map((x) => x.costUsd));
-  const dayMax = Math.max(1e-9, ...s.costByDay.map((x) => x.costUsd));
+  const stageMax = Math.max(1, ...s.tokensByStage.map((x) => x.totalTokens));
+  const dayMax = Math.max(1, ...s.tokensByDay.map((x) => x.totalTokens));
 
   return (
     <section
@@ -71,32 +71,32 @@ export function DashboardView({ summary: s }: { summary: DashboardSummary }) {
             Dashboard
           </h1>
           <p className="max-w-[64ch] text-[13.5px] text-ink-2">
-            Internal run &amp; cost observability — LLM spend per stage, per
+            Internal run &amp; usage observability — LLM tokens per stage, per
             day, and the status of recent discovery runs. Read-only.
           </p>
         </div>
       </header>
 
       <div className="mt-[22px] grid grid-cols-2 gap-[18px]">
-        <Tile label="Total LLM spend" value={usd(s.totalCostUsd)} />
+        <Tile label="Total LLM tokens" value={tokens(s.totalTokens)} />
         <Tile label="Runs" value={String(s.runCount)} />
       </div>
 
       <div className="mt-[18px] grid grid-cols-2 gap-[18px]">
-        <Panel title="Spend by stage" sub="USD · all time">
-          {s.costByStage.length === 0 ? (
-            <p className="text-[12.5px] text-ink-2">No spend recorded yet.</p>
+        <Panel title="Tokens by stage" sub="tokens · all time">
+          {s.tokensByStage.length === 0 ? (
+            <p className="text-[12.5px] text-ink-2">No tokens recorded yet.</p>
           ) : (
             <div className="flex flex-col gap-[13px]">
-              {s.costByStage.map((row) => (
+              {s.tokensByStage.map((row) => (
                 <div
                   key={row.stage}
                   className="grid grid-cols-[110px_1fr_78px] items-center gap-[12px]"
                 >
                   <span className="text-[12.5px] font-medium">{row.stage}</span>
-                  <Bar frac={row.costUsd / stageMax} />
+                  <Bar frac={row.totalTokens / stageMax} />
                   <span className="text-right font-mono text-[11px] text-ink-2 tabular-nums">
-                    {usd(row.costUsd, 4)}
+                    {tokens(row.totalTokens)}
                   </span>
                 </div>
               ))}
@@ -104,12 +104,12 @@ export function DashboardView({ summary: s }: { summary: DashboardSummary }) {
           )}
         </Panel>
 
-        <Panel title="Spend by day" sub="USD · runs">
-          {s.costByDay.length === 0 ? (
-            <p className="text-[12.5px] text-ink-2">No spend recorded yet.</p>
+        <Panel title="Tokens by day" sub="tokens · runs">
+          {s.tokensByDay.length === 0 ? (
+            <p className="text-[12.5px] text-ink-2">No tokens recorded yet.</p>
           ) : (
             <div className="flex flex-col gap-[13px]">
-              {s.costByDay.map((row) => (
+              {s.tokensByDay.map((row) => (
                 <div
                   key={row.date}
                   className="grid grid-cols-[92px_1fr_92px] items-center gap-[12px]"
@@ -117,9 +117,9 @@ export function DashboardView({ summary: s }: { summary: DashboardSummary }) {
                   <span className="font-mono text-[11px] text-ink-2">
                     {row.date}
                   </span>
-                  <Bar frac={row.costUsd / dayMax} />
+                  <Bar frac={row.totalTokens / dayMax} />
                   <span className="text-right font-mono text-[11px] text-ink-2 tabular-nums">
-                    {usd(row.costUsd, 4)}
+                    {tokens(row.totalTokens)}
                     <span className="ml-[6px] text-ink-3">· {row.runs}r</span>
                   </span>
                 </div>
@@ -140,7 +140,7 @@ export function DashboardView({ summary: s }: { summary: DashboardSummary }) {
                 <span>Kind</span>
                 <span>Status</span>
                 <span>Found / new / err</span>
-                <span className="text-right">Cost</span>
+                <span className="text-right">Tokens</span>
               </div>
               {s.recentRuns.map((run) => (
                 <div
@@ -168,7 +168,7 @@ export function DashboardView({ summary: s }: { summary: DashboardSummary }) {
                     </b>
                   </span>
                   <span className="text-right font-mono text-[11px] tabular-nums">
-                    {run.cost ? usd(run.cost.costUsd, 4) : "—"}
+                    {run.tokens ? tokens(run.tokens.totalTokens) : "—"}
                   </span>
                 </div>
               ))}

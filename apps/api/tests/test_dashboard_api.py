@@ -1,6 +1,5 @@
 import uuid
 from datetime import UTC, datetime
-from decimal import Decimal
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -34,6 +33,10 @@ async def _set_tenant(session: object, user_id: uuid.UUID) -> None:
     )
 
 
+DAY_A = datetime(2026, 7, 5, 12, tzinfo=UTC)
+DAY_B = datetime(2026, 7, 6, 12, tzinfo=UTC)
+
+
 async def _seed(
     *,
     sub: str,
@@ -42,34 +45,40 @@ async def _seed(
 ) -> uuid.UUID:
     """Create a fresh user and the given llm_costs + runs rows, committed so the API
     (a separate session, matched by google_sub) can read them under RLS. Each cost dict
-    may set stage/model/cost_usd/created_at; each run dict may set kind/status/cost_usd/
-    duration_ms/created_at."""
+    may set stage/model/prompt_tokens/completion_tokens/embed_tokens/created_at, plus
+    `run` — an index into `runs` linking the row to that run (omit for ingest-style rows
+    that belong to no run). Each run dict may set kind/status/duration_ms/created_at."""
     async with async_session() as session:
         user = User(email=f"{uuid.uuid4()}@example.com", google_sub=sub)
         session.add(user)
         await session.flush()
         await _set_tenant(session, user.id)
 
+        run_models: list[Run] = []
+        for spec in runs or []:
+            run = Run(
+                user_id=user.id,
+                kind=str(spec.get("kind", "on_demand")),
+                status=str(spec.get("status", "done")),
+                duration_ms=spec.get("duration_ms"),
+                created_at=spec.get("created_at", DAY_A),
+            )
+            session.add(run)
+            run_models.append(run)
+        await session.flush()  # assign run ids before linking cost rows
+
         for spec in costs or []:
+            idx = spec.get("run")
             session.add(
                 LlmCost(
                     user_id=user.id,
+                    run_id=run_models[int(str(idx))].id if idx is not None else None,
                     stage=str(spec.get("stage", "extract")),
                     model=str(spec.get("model", "gpt-4o-mini")),
-                    cost_usd=Decimal(str(spec.get("cost_usd", "0"))),
-                    created_at=spec.get("created_at", datetime(2026, 7, 5, 12, tzinfo=UTC)),
-                )
-            )
-        for spec in runs or []:
-            cost_usd = spec.get("cost_usd")
-            session.add(
-                Run(
-                    user_id=user.id,
-                    kind=str(spec.get("kind", "on_demand")),
-                    status=str(spec.get("status", "done")),
-                    cost_usd=Decimal(str(cost_usd)) if cost_usd is not None else None,
-                    duration_ms=spec.get("duration_ms"),
-                    created_at=spec.get("created_at", datetime(2026, 7, 5, 12, tzinfo=UTC)),
+                    prompt_tokens=int(str(spec.get("prompt_tokens", 0))),
+                    completion_tokens=int(str(spec.get("completion_tokens", 0))),
+                    embed_tokens=int(str(spec.get("embed_tokens", 0))),
+                    created_at=spec.get("created_at", DAY_A),
                 )
             )
         await session.commit()
@@ -82,32 +91,43 @@ async def _get(path: str, sub: str) -> object:
         return await client.get(path, headers=_auth_header(sub))
 
 
-DAY_A = datetime(2026, 7, 5, 12, tzinfo=UTC)
-DAY_B = datetime(2026, 7, 6, 12, tzinfo=UTC)
-
-
 @requires_db
 async def test_dashboard_empty_for_fresh_user(migrated_db: None) -> None:
     resp = await _get("/api/v1/dashboard", _sub())
     assert resp.status_code == 200  # type: ignore[attr-defined]
     body = resp.json()  # type: ignore[attr-defined]
-    assert body["totalCostUsd"] == 0
+    assert body["totalTokens"] == 0
     assert body["runCount"] == 0
-    assert body["costByStage"] == []
-    assert body["costByDay"] == []
+    assert body["tokensByStage"] == []
+    assert body["tokensByDay"] == []
     assert body["recentRuns"] == []
 
 
 @requires_db
-async def test_dashboard_aggregates_costs_and_runs(migrated_db: None) -> None:
+async def test_dashboard_aggregates_tokens_and_runs(migrated_db: None) -> None:
     sub = _sub()
     await _seed(
         sub=sub,
         costs=[
-            {"stage": "extract", "cost_usd": "0.10", "created_at": DAY_A},
-            {"stage": "embed", "cost_usd": "0.02", "created_at": DAY_A},
-            {"stage": "extract", "cost_usd": "0.05", "created_at": DAY_B},
-            {"stage": "score", "cost_usd": "0.20", "created_at": DAY_B},
+            {
+                "stage": "extract",
+                "prompt_tokens": 800,
+                "completion_tokens": 200,
+                "created_at": DAY_A,
+            },
+            {"stage": "embed", "embed_tokens": 100, "created_at": DAY_A},
+            {
+                "stage": "extract",
+                "prompt_tokens": 400,
+                "completion_tokens": 100,
+                "created_at": DAY_B,
+            },
+            {
+                "stage": "score",
+                "prompt_tokens": 1500,
+                "completion_tokens": 500,
+                "created_at": DAY_B,
+            },
         ],
         runs=[
             {"created_at": DAY_A},
@@ -118,52 +138,57 @@ async def test_dashboard_aggregates_costs_and_runs(migrated_db: None) -> None:
 
     body = (await _get("/api/v1/dashboard", sub)).json()  # type: ignore[attr-defined]
 
-    assert body["totalCostUsd"] == pytest.approx(0.37)
+    assert body["totalTokens"] == 3600  # 1000 + 100 + 500 + 2000
     assert body["runCount"] == 3
+    assert "totalCostUsd" not in body
 
-    # costByStage: summed per stage, ordered by spend desc.
-    stages = body["costByStage"]
+    # tokensByStage: summed per stage, ordered by volume desc.
+    stages = body["tokensByStage"]
     assert [s["stage"] for s in stages] == ["score", "extract", "embed"]
-    by_stage = {s["stage"]: s["costUsd"] for s in stages}
-    assert by_stage["extract"] == pytest.approx(0.15)
-    assert by_stage["score"] == pytest.approx(0.20)
-    assert by_stage["embed"] == pytest.approx(0.02)
+    by_stage = {s["stage"]: s["totalTokens"] for s in stages}
+    assert by_stage["extract"] == 1500
+    assert by_stage["score"] == 2000
+    assert by_stage["embed"] == 100
 
-    # costByDay: one point per day (ascending), cost from llm_costs, runs from runs.
-    days = body["costByDay"]
+    # tokensByDay: one point per day (ascending), tokens from llm_costs, runs from runs.
+    days = body["tokensByDay"]
     assert [p["date"] for p in days] == ["2026-07-05", "2026-07-06"]
-    assert days[0]["costUsd"] == pytest.approx(0.12)
+    assert days[0]["totalTokens"] == 1100
     assert days[0]["runs"] == 1
-    assert days[1]["costUsd"] == pytest.approx(0.25)
+    assert days[1]["totalTokens"] == 2500
     assert days[1]["runs"] == 2
 
 
 @requires_db
-async def test_cost_day_includes_days_with_costs_but_no_run(migrated_db: None) -> None:
+async def test_token_day_includes_days_with_usage_but_no_run(migrated_db: None) -> None:
     # Company ingest spends LLM tokens without creating a Run (see LlmCost docstring):
     # such a day must still appear, with runs == 0.
     sub = _sub()
-    await _seed(sub=sub, costs=[{"stage": "extract", "cost_usd": "0.03", "created_at": DAY_A}])
+    await _seed(
+        sub=sub,
+        costs=[{"stage": "extract", "prompt_tokens": 300, "created_at": DAY_A}],
+    )
 
     body = (await _get("/api/v1/dashboard", sub)).json()  # type: ignore[attr-defined]
     assert body["runCount"] == 0
-    assert body["costByDay"] == [{"date": "2026-07-05", "costUsd": pytest.approx(0.03), "runs": 0}]
+    assert body["tokensByDay"] == [{"date": "2026-07-05", "totalTokens": 300, "runs": 0}]
 
 
 @requires_db
-async def test_recent_runs_carry_cost_and_are_newest_first(migrated_db: None) -> None:
+async def test_recent_runs_carry_derived_tokens_and_are_newest_first(
+    migrated_db: None,
+) -> None:
     sub = _sub()
     await _seed(
         sub=sub,
         runs=[
             {"kind": "scheduled", "status": "done", "created_at": DAY_A},
-            {
-                "kind": "on_demand",
-                "status": "error",
-                "cost_usd": "0.30",
-                "duration_ms": 1234,
-                "created_at": DAY_B,
-            },
+            {"kind": "on_demand", "status": "error", "duration_ms": 1234, "created_at": DAY_B},
+        ],
+        # Both rows belong to run index 1 — its total is DERIVED as their sum.
+        costs=[
+            {"stage": "discovery", "prompt_tokens": 700, "run": 1, "created_at": DAY_B},
+            {"stage": "score", "completion_tokens": 300, "run": 1, "created_at": DAY_B},
         ],
     )
 
@@ -173,11 +198,12 @@ async def test_recent_runs_carry_cost_and_are_newest_first(migrated_db: None) ->
     # Newest first.
     assert recent[0]["kind"] == "on_demand"
     assert recent[0]["status"] == "error"
-    assert recent[0]["cost"]["costUsd"] == pytest.approx(0.30)
-    assert recent[0]["cost"]["durationMs"] == 1234
-    # A run without a cost rollup serializes cost as null.
+    assert recent[0]["tokens"]["totalTokens"] == 1000
+    assert recent[0]["tokens"]["durationMs"] == 1234
+    # A run with NO ledger rows serializes tokens as null — "nothing recorded" is
+    # distinct from "recorded zero".
     assert recent[1]["kind"] == "scheduled"
-    assert recent[1]["cost"] is None
+    assert recent[1]["tokens"] is None
 
 
 @requires_db
@@ -185,13 +211,13 @@ async def test_cross_tenant_isolation(migrated_db: None) -> None:
     owner = _sub()
     await _seed(
         sub=owner,
-        costs=[{"stage": "score", "cost_usd": "0.50", "created_at": DAY_A}],
+        costs=[{"stage": "score", "prompt_tokens": 500, "created_at": DAY_A}],
         runs=[{"created_at": DAY_A}],
     )
 
     body = (await _get("/api/v1/dashboard", _sub())).json()  # type: ignore[attr-defined]
-    assert body["totalCostUsd"] == 0
+    assert body["totalTokens"] == 0
     assert body["runCount"] == 0
-    assert body["costByStage"] == []
-    assert body["costByDay"] == []
+    assert body["tokensByStage"] == []
+    assert body["tokensByDay"] == []
     assert body["recentRuns"] == []

@@ -20,8 +20,8 @@ class RunStats(CamelModel):
     scored: int = 0  # postings re-scored — only set by a rescore run
 
 
-class RunCost(CamelModel):
-    cost_usd: float
+class RunTokens(CamelModel):
+    total_tokens: int
     duration_ms: int | None = None
 
 
@@ -33,13 +33,16 @@ class RunOut(CamelModel):
     finished_at: datetime | None
     stats: RunStats
     created_at: datetime
-    cost: RunCost | None = None
+    tokens: RunTokens | None = None
 
     @classmethod
-    def from_model(cls, run: Run) -> "RunOut":
-        cost = (
-            RunCost(cost_usd=float(run.cost_usd), duration_ms=run.duration_ms)
-            if run.cost_usd is not None
+    def from_model(cls, run: Run, total_tokens: int | None = None) -> "RunOut":
+        """`total_tokens` is DERIVED from the `llm_costs` ledger by the caller (the dashboard
+        service) — runs store no usage rollup. Callers that don't need it omit it, and
+        `tokens` stays None."""
+        tokens = (
+            RunTokens(total_tokens=total_tokens, duration_ms=run.duration_ms)
+            if total_tokens is not None
             else None
         )
         return cls(
@@ -50,5 +53,5 @@ class RunOut(CamelModel):
             finished_at=run.finished_at,
             stats=RunStats.model_validate(run.stats),
             created_at=run.created_at,
-            cost=cost,
+            tokens=tokens,
         )

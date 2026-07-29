@@ -160,7 +160,7 @@ async def test_export_contains_callers_rows_in_camelcase(migrated_db: None) -> N
         assert len(body["postings"]) == 1
         assert len(body["scores"]) == 1
 
-        # llmCosts must serialise to the frozen LlmCost interface (camelCase, cost as number).
+        # llmCosts must serialise to the frozen LlmCost interface (camelCase, token counts).
         cost = body["llmCosts"][0]
         assert set(cost) == {
             "id",
@@ -171,12 +171,10 @@ async def test_export_contains_callers_rows_in_camelcase(migrated_db: None) -> N
             "promptTokens",
             "completionTokens",
             "embedTokens",
-            "costUsd",
             "createdAt",
         }
         assert cost["stage"] == "extract"
         assert cost["promptTokens"] == 10
-        assert cost["costUsd"] == 0.0015
     finally:
         await _cleanup_users(user.id)
 
