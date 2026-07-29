@@ -48,3 +48,4 @@ apps/api/tests/fixtures/pipeline/http/*.json
 .worktrees/
 .lane-status.md
 .lane-report.md
+.superpowers/
