@@ -49,3 +49,5 @@ apps/api/tests/fixtures/pipeline/http/*.json
 .lane-status.md
 .lane-report.md
 .superpowers/
+.claude/settings.local.json
+.claude/worktrees/
