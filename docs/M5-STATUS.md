@@ -82,9 +82,10 @@ account-level limit is now the only backstop.
   SSE `/runs/stream`, CI deploy (web→Vercel, api→container host). Gated on open decisions
   (Arq vs Celery; Fly.io vs Railway/Render). *The `services/run.py` `else` branches are the
   pre-built enqueue seam.*
-- **M6 — Polish & launch:** onboarding, empty/loading states, perf budget, security review,
-  keyboard-nav/a11y — plus the remaining follow-ups above (the BFF + rate-limit UX pair is
-  done).
+- **M6 — Polish & launch:** onboarding, empty/loading states, security review. **Scoped down
+  2026-07-31** (owner decision): keyboard-nav/a11y and the perf budget were cut from spec §18
+  and are not deliverables. The follow-ups above are a SEPARATE track in their own worktree —
+  they are not part of M6.
 
 ## Operational note
 During the LOAD-spec fix, a test `POST /runs` hit a **live-mode `uvicorn` (real OpenAI key,
